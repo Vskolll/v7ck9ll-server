@@ -31,6 +31,7 @@ IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
 IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
+ANDROID_INSTRUCTION_URL = os.getenv("ANDROID_INSTRUCTION_URL", "https://t.me/+43BHwfNm3XlmN2Zi")
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -134,6 +135,7 @@ def build_android_menu() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("Получить код", callback_data="android_code")],
             [InlineKeyboardButton("Получить приложение", callback_data="android_app")],
+            [InlineKeyboardButton("Инструкция", url=ANDROID_INSTRUCTION_URL)],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
     )
