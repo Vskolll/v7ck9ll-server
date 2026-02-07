@@ -4,7 +4,7 @@ from typing import Optional
 
 import requests
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 load_dotenv()
@@ -56,12 +56,33 @@ PLAN_PRICES_MAP = parse_plan_prices(PLAN_PRICES)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not SERVER_URL or not BOT_SECRET:
+        await update.message.reply_text("Сервер не настроен.")
+        return
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/sub/status",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": str(update.effective_user.id)},
+        )
+        active = r.status_code == 200 and r.json().get("active")
+    except Exception:
+        active = False
+
+    if not active:
+        keyboard = [["Купить подписку"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text(
+            "Подписка не активна. Нажми кнопку ниже, чтобы купить.",
+            reply_markup=reply_markup,
+        )
+        return
+
+    keyboard = [["Android проверка", "iOS проверка"], ["Профиль"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
-        "Привет! Доступ к кодам только по подписке.\n"
-        "Команды:\n"
-        "/buy — купить подписку\n"
-        "/status — статус подписки\n"
-        "/key — получить одноразовый код (10 минут)"
+        "Добро пожаловать! Выбери действие:",
+        reply_markup=reply_markup,
     )
 
 
@@ -133,6 +154,14 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["stage"] = "plan"
 
 
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await status(update, context)
+
+
+async def ios_stub(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("iOS проверка пока недоступна.")
+
+
 def method_instructions(method: str) -> str:
     if method == "UA" and PAY_UA:
         return f"Реквизиты Украина:\n{PAY_UA}"
@@ -148,6 +177,19 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = (update.message.text or "").strip().upper()
     stage = context.user_data.get("stage")
+
+    if text == "КУПИТЬ ПОДПИСКУ":
+        await buy(update, context)
+        return
+    if text == "ANDROID ПРОВЕРКА":
+        await key(update, context)
+        return
+    if text == "IOS ПРОВЕРКА" or text == "IОS ПРОВЕРКА":
+        await ios_stub(update, context)
+        return
+    if text == "ПРОФИЛЬ":
+        await profile(update, context)
+        return
 
     if stage == "plan":
         try:
@@ -496,16 +538,17 @@ def main():
     app.add_handler(CommandHandler("reject", reject))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
-    app.job_queue.run_repeating(
-        lambda ctx: remind_expiring(ctx, 3, "Подписка заканчивается через 3 дня."),
-        interval=6 * 60 * 60,
-        first=60,
-    )
-    app.job_queue.run_repeating(
-        lambda ctx: remind_expiring(ctx, 0, "Подписка заканчивается сегодня."),
-        interval=6 * 60 * 60,
-        first=120,
-    )
+    if app.job_queue:
+        app.job_queue.run_repeating(
+            lambda ctx: remind_expiring(ctx, 3, "Подписка заканчивается через 3 дня."),
+            interval=6 * 60 * 60,
+            first=60,
+        )
+        app.job_queue.run_repeating(
+            lambda ctx: remind_expiring(ctx, 0, "Подписка заканчивается сегодня."),
+            interval=6 * 60 * 60,
+            first=120,
+        )
     app.run_polling()
 
 
