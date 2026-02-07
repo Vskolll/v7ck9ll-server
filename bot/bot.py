@@ -1,11 +1,19 @@
 import os
 import time
+import secrets
 from typing import Optional
 
 import requests
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 load_dotenv()
 
@@ -17,6 +25,10 @@ ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()}
 PAY_UA = os.getenv("PAY_UA", "")
 PAY_RU = os.getenv("PAY_RU", "")
 PAY_CRYPTO = os.getenv("PAY_CRYPTO", "")
+
+IOS_API_URL = os.getenv("IOS_API_URL", "https://geo-photo-report.onrender.com/api/register-code")
+IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
+IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -55,9 +67,59 @@ def parse_plan_prices(raw: str) -> dict[int, int]:
 PLAN_PRICES_MAP = parse_plan_prices(PLAN_PRICES)
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def build_main_menu(active: bool) -> InlineKeyboardMarkup:
+    if not active:
+        return InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Купить подписку", callback_data="buy")]]
+        )
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Android проверка", callback_data="android"),
+                InlineKeyboardButton("iOS проверка", callback_data="ios"),
+            ],
+            [InlineKeyboardButton("Профиль", callback_data="profile")],
+        ]
+    )
+
+
+def build_plan_menu() -> InlineKeyboardMarkup:
+    buttons = []
+    row = []
+    for months in (1, 3, 6, 12):
+        label = PLAN_LABELS.get(months, f"{months} мес.")
+        price = PLAN_PRICES_MAP.get(months)
+        price_text = f"${price}" if price is not None else "цена?"
+        row.append(
+            InlineKeyboardButton(
+                f"{label} — {price_text}", callback_data=f"plan:{months}"
+            )
+        )
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("Назад", callback_data="back")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def build_method_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Украина", callback_data="method:UA"),
+                InlineKeyboardButton("Россия", callback_data="method:RU"),
+            ],
+            [InlineKeyboardButton("CRYPTO", callback_data="method:CRYPTO")],
+            [InlineKeyboardButton("Назад", callback_data="buy")],
+        ]
+    )
+
+
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
-        await update.message.reply_text("Сервер не настроен.")
+        await update.effective_message.reply_text("Сервер не настроен.")
         return
     try:
         r = requests.post(
@@ -68,22 +130,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active = r.status_code == 200 and r.json().get("active")
     except Exception:
         active = False
-
-    if not active:
-        keyboard = [["Купить подписку"]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        await update.message.reply_text(
-            "Подписка не активна. Нажми кнопку ниже, чтобы купить.",
-            reply_markup=reply_markup,
-        )
-        return
-
-    keyboard = [["Android проверка", "iOS проверка"], ["Профиль"]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "Добро пожаловать! Выбери действие:",
-        reply_markup=reply_markup,
+        reply_markup=build_main_menu(active),
     )
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_main_menu(update, context)
 
 
 def is_admin(user_id: Optional[int]) -> bool:
@@ -92,7 +146,7 @@ def is_admin(user_id: Optional[int]) -> bool:
 
 async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
-        await update.message.reply_text("Сервер не настроен.")
+        await update.effective_message.reply_text("Сервер не настроен.")
         return
     try:
         r = requests.post(
@@ -101,21 +155,21 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
             json={"user_id": str(update.effective_user.id)}
         )
         if r.status_code == 403:
-            await update.message.reply_text("Подписка не активна. Используй /buy.")
+            await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
             return
         if r.status_code != 200:
-            await update.message.reply_text("Ошибка сервера при выдаче кода.")
+            await update.effective_message.reply_text("Ошибка сервера при выдаче кода.")
             return
         data = r.json()
         code = data.get("code", "")
-        await update.message.reply_text(f"Android код: {code}\nДействует 10 минут.")
+        await update.effective_message.reply_text(f"Android код: {code}\nДействует 10 минут.")
     except Exception:
-        await update.message.reply_text("Ошибка сети.")
+        await update.effective_message.reply_text("Ошибка сети.")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
-        await update.message.reply_text("Сервер не настроен.")
+        await update.effective_message.reply_text("Сервер не настроен.")
         return
     try:
         r = requests.post(
@@ -124,34 +178,29 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             json={"user_id": str(update.effective_user.id)}
         )
         if r.status_code != 200:
-            await update.message.reply_text("Ошибка сервера при проверке подписки.")
+            await update.effective_message.reply_text("Ошибка сервера при проверке подписки.")
             return
         data = r.json()
         if not data.get("active"):
-            await update.message.reply_text("Подписка не активна. Используй /buy.")
+            await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
             return
         expires_at = int(data.get("expires_at", 0))
         days_left = max(0, int((expires_at - int(time.time())) / 86400))
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"Подписка активна до {time.strftime('%Y-%m-%d', time.localtime(expires_at))} "
             f"(осталось {days_left} дн.)."
         )
         if days_left <= 3:
-            await update.message.reply_text("Подписка скоро закончится. Продли через /buy.")
+            await update.effective_message.reply_text("Подписка скоро закончится. Продли через /buy.")
     except Exception:
-        await update.message.reply_text("Ошибка сети.")
+        await update.effective_message.reply_text("Ошибка сети.")
 
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    prices = PLAN_PRICES_MAP
-    lines = ["Выбери срок подписки (ответь числом):"]
-    for months in (1, 3, 6, 12):
-        label = PLAN_LABELS.get(months, f"{months} мес.")
-        price = prices.get(months)
-        price_text = f"${price}" if price is not None else "уточнить цену"
-        lines.append(f"{months} — {label} — {price_text}")
-    await update.message.reply_text("\n".join(lines))
-    context.user_data["stage"] = "plan"
+    await update.message.reply_text(
+        "Выбери срок подписки:",
+        reply_markup=build_plan_menu(),
+    )
 
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,71 +224,56 @@ def method_instructions(method: str) -> str:
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
-    text = (update.message.text or "").strip().upper()
+    raw_text = (update.message.text or "").strip()
+    text = raw_text.upper()
     stage = context.user_data.get("stage")
-
-    if text == "КУПИТЬ ПОДПИСКУ":
-        await buy(update, context)
-        return
-    if text == "ANDROID ПРОВЕРКА":
-        await key(update, context)
-        return
-    if text == "IOS ПРОВЕРКА" or text == "IОS ПРОВЕРКА":
-        await ios_stub(update, context)
-        return
-    if text == "ПРОФИЛЬ":
-        await profile(update, context)
-        return
-
-    if stage == "plan":
+    if stage == "ios_name":
+        name = raw_text.strip().lower()
+        if not name or not all(c.isalnum() or c in ("-", "_") for c in name):
+            await update.message.reply_text(
+                "Имя должно быть латиницей/цифрами и может содержать '-' или '_'."
+            )
+            return
+        if not IOS_API_TOKEN:
+            await update.message.reply_text("iOS API токен не настроен.")
+            return
+        code = f"IOS-{secrets.token_hex(2).upper()}-{secrets.token_hex(2).upper()}"
         try:
-            months = int(text)
-        except ValueError:
-            await update.message.reply_text("Нужно число 1, 3, 6 или 12.")
-            return
-        if months not in (1, 3, 6, 12):
-            await update.message.reply_text("Нужно число 1, 3, 6 или 12.")
-            return
-        context.user_data["plan_months"] = months
-        context.user_data["stage"] = "method"
-        await update.message.reply_text("Выбери способ оплаты: UA / RU / CRYPTO")
-        return
-
-    if stage == "method":
-        method = text
-        if method not in ("UA", "RU", "CRYPTO"):
-            await update.message.reply_text("Нужно выбрать: UA / RU / CRYPTO")
-            return
-        months = context.user_data.get("plan_months")
-        if not months:
-            context.user_data.pop("stage", None)
-            await update.message.reply_text("Срок не выбран. Начни заново /buy.")
+            r = requests.post(
+                IOS_API_URL,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {IOS_API_TOKEN}",
+                },
+                json={"code": code, "chatId": str(update.effective_user.id)},
+            )
+            if r.status_code != 200:
+                await update.message.reply_text("Не удалось создать ссылку. Попробуй позже.")
+                return
+        except Exception:
+            await update.message.reply_text("Ошибка сети при создании ссылки.")
             return
         try:
             r = requests.post(
-                f"{SERVER_URL}/payment/create",
+                f"{SERVER_URL}/ios/create",
                 headers={"X-Bot-Secret": BOT_SECRET},
                 json={
                     "user_id": str(update.effective_user.id),
-                    "plan_months": int(months),
-                    "method": method,
+                    "name": name,
+                    "code": code,
                 },
             )
-            if r.status_code != 200:
-                await update.message.reply_text("Ошибка сервера при создании платежа.")
+            if r.status_code == 409:
+                await update.message.reply_text("Такое имя уже занято. Попробуй другое.")
                 return
-            payment_id = r.json().get("payment_id")
+            if r.status_code != 200:
+                await update.message.reply_text("Ошибка сервера при сохранении ссылки.")
+                return
         except Exception:
             await update.message.reply_text("Ошибка сети.")
             return
-
-        context.user_data["payment_id"] = payment_id
-        context.user_data["method"] = method
-        context.user_data["stage"] = "screenshot"
-        await update.message.reply_text(
-            f"{method_instructions(method)}\n\n"
-            "После оплаты пришли скрин платежа одним фото."
-        )
+        context.user_data.pop("stage", None)
+        await update.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
         return
 
 
@@ -286,6 +320,128 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Скрин отправлен админу. Ожидай подтверждения.")
     context.user_data.pop("stage", None)
+
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+    data = query.data or ""
+    user_id = str(update.effective_user.id)
+
+    if data == "buy":
+        await query.message.reply_text("Выбери срок подписки:", reply_markup=build_plan_menu())
+        return
+
+    if data == "back":
+        await show_main_menu(update, context)
+        return
+
+    if data == "android":
+        await key(update, context)
+        return
+
+    if data == "ios":
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/sub/status",
+                headers={"X-Bot-Secret": BOT_SECRET},
+                json={"user_id": user_id},
+            )
+            active = r.status_code == 200 and r.json().get("active")
+        except Exception:
+            active = False
+        if not active:
+            await query.message.reply_text(
+                "Подписка не активна. Нажми кнопку ниже, чтобы купить.",
+                reply_markup=build_main_menu(False),
+            )
+            return
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/ios/get",
+                headers={"X-Bot-Secret": BOT_SECRET},
+                json={"user_id": user_id},
+            )
+            if r.status_code != 200:
+                await query.message.reply_text("Ошибка сервера.")
+                return
+            data_json = r.json()
+        except Exception:
+            await query.message.reply_text("Ошибка сети.")
+            return
+        if data_json.get("exists"):
+            name = data_json.get("name")
+            await query.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
+            return
+        await query.message.reply_text(
+            "Ссылка не привязана. Обратитесь к администратору или создайте новую.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Создать новую", callback_data="ios_create")]]
+            ),
+        )
+        return
+
+    if data == "ios_create":
+        context.user_data["stage"] = "ios_name"
+        await query.message.reply_text(
+            "Введите имя ссылки (латиница/цифры, можно '-' и '_')."
+        )
+        return
+
+    if data == "profile":
+        await profile(update, context)
+        return
+
+    if data.startswith("plan:"):
+        try:
+            months = int(data.split(":", 1)[1])
+        except ValueError:
+            await query.message.reply_text("Некорректный срок.")
+            return
+        if months not in (1, 3, 6, 12):
+            await query.message.reply_text("Некорректный срок.")
+            return
+        context.user_data["plan_months"] = months
+        await query.message.reply_text("Выбери способ оплаты:", reply_markup=build_method_menu())
+        return
+
+    if data.startswith("method:"):
+        method = data.split(":", 1)[1]
+        if method not in ("UA", "RU", "CRYPTO"):
+            await query.message.reply_text("Некорректный метод.")
+            return
+        months = context.user_data.get("plan_months")
+        if not months:
+            await query.message.reply_text("Срок не выбран. Начни заново.")
+            return
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/payment/create",
+                headers={"X-Bot-Secret": BOT_SECRET},
+                json={
+                    "user_id": user_id,
+                    "plan_months": int(months),
+                    "method": method,
+                },
+            )
+            if r.status_code != 200:
+                await query.message.reply_text("Ошибка сервера при создании платежа.")
+                return
+            payment_id = r.json().get("payment_id")
+        except Exception:
+            await query.message.reply_text("Ошибка сети.")
+            return
+
+        context.user_data["payment_id"] = payment_id
+        context.user_data["method"] = method
+        context.user_data["stage"] = "screenshot"
+        await query.message.reply_text(
+            f"{method_instructions(method)}\n\n"
+            "После оплаты пришли скрин платежа одним фото."
+        )
+        return
 
 
 async def remind_expiring(context: ContextTypes.DEFAULT_TYPE, days: int, label: str):
@@ -536,6 +692,7 @@ def main():
     app.add_handler(CommandHandler("user", user_payments))
     app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("reject", reject))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     if app.job_queue:

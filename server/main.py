@@ -61,6 +61,16 @@ def init_db():
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS ios_links (
+                user_id TEXT PRIMARY KEY,
+                name TEXT UNIQUE,
+                code TEXT,
+                created_at INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 device_id TEXT,
@@ -124,6 +134,16 @@ class SubStatusReq(BaseModel):
 
 class SubExpiringReq(BaseModel):
     days: int = 3
+
+
+class IosGetReq(BaseModel):
+    user_id: str
+
+
+class IosCreateReq(BaseModel):
+    user_id: str
+    name: str
+    code: str
 
 
 def check_secret(given: Optional[str], expected: str, name: str):
@@ -333,6 +353,37 @@ def sub_expiring(req: SubExpiringReq, x_bot_secret: Optional[str] = Header(None)
             (until,),
         ).fetchall()
     return {"items": [{"user_id": r[0], "expires_at": r[1]} for r in rows]}
+
+
+@app.post("/ios/get")
+def ios_get(req: IosGetReq, x_bot_secret: Optional[str] = Header(None)):
+    check_secret(x_bot_secret, BOT_SECRET, "BOT_SECRET")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT name, code, created_at FROM ios_links WHERE user_id=?",
+            (req.user_id,),
+        ).fetchone()
+    if not row:
+        return {"exists": False}
+    return {"exists": True, "name": row[0], "code": row[1], "created_at": row[2]}
+
+
+@app.post("/ios/create")
+def ios_create(req: IosCreateReq, x_bot_secret: Optional[str] = Header(None)):
+    check_secret(x_bot_secret, BOT_SECRET, "BOT_SECRET")
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="invalid_name")
+    now = int(time.time())
+    with db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO ios_links(user_id, name, code, created_at) VALUES(?, ?, ?, ?)",
+                (req.user_id, name, req.code, now),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="name_taken")
+    return {"ok": True, "name": name, "code": req.code}
 
 
 @app.post("/payment/get")
