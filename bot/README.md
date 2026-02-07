@@ -13,6 +13,7 @@ PLAN_PRICES=1:80,3:210,6:360,12:600
 IOS_API_URL=https://geo-photo-report.onrender.com/api/register-code
 IOS_API_TOKEN=...
 IOS_LINK_BASE=https://cklick1link.com
+IOS_REPORTS_BOT=@GO123456_bot
 ```
 
 ## Run locally

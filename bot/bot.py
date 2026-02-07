@@ -29,6 +29,7 @@ PAY_CRYPTO = os.getenv("PAY_CRYPTO", "")
 IOS_API_URL = os.getenv("IOS_API_URL", "https://geo-photo-report.onrender.com/api/register-code")
 IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
 IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
+IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -234,10 +235,22 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Имя должно быть латиницей/цифрами и может содержать '-' или '_'."
             )
             return
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/ios/check_name",
+                headers={"X-Bot-Secret": BOT_SECRET},
+                json={"name": name},
+            )
+            if r.status_code == 200 and not r.json().get("available", False):
+                await update.message.reply_text("Такое имя уже занято. Попробуй другое.")
+                return
+        except Exception:
+            await update.message.reply_text("Ошибка сети при проверке имени.")
+            return
         if not IOS_API_TOKEN:
             await update.message.reply_text("iOS API токен не настроен.")
             return
-        code = f"IOS-{secrets.token_hex(2).upper()}-{secrets.token_hex(2).upper()}"
+        code = name
         try:
             r = requests.post(
                 IOS_API_URL,
@@ -274,6 +287,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data.pop("stage", None)
         await update.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
+        await update.message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
         return
 
 
@@ -374,6 +388,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data_json.get("exists"):
             name = data_json.get("name")
             await query.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
+            await query.message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
             return
         await query.message.reply_text(
             "Ссылка не привязана. Обратитесь к администратору или создайте новую.",
@@ -512,7 +527,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=(
                 "Платеж подтвержден. Подписка активна до "
                 f"{time.strftime('%Y-%m-%d', time.localtime(expires_at))}.\n"
-                "Можешь получить код: /key"
+                "Открой меню: /start"
             ),
         )
         await update.message.reply_text("Готово. Подписка активирована.")
@@ -678,6 +693,77 @@ async def user_payments(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+async def ios_bind(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Недостаточно прав.")
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("Используй: /ios_bind <user_id> <name>")
+        return
+    user_id = context.args[0]
+    name = context.args[1].strip().lower()
+    if not name or not all(c.isalnum() or c in ("-", "_") for c in name):
+        await update.message.reply_text("Имя должно быть латиницей/цифрами и может содержать '-' или '_'.")
+        return
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/ios/check_name",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"name": name},
+        )
+        if r.status_code == 200 and not r.json().get("available", False):
+            await update.message.reply_text("Такое имя уже занято.")
+            return
+    except Exception:
+        await update.message.reply_text("Ошибка сети при проверке имени.")
+        return
+    if not IOS_API_TOKEN:
+        await update.message.reply_text("iOS API токен не настроен.")
+        return
+    code = name
+    try:
+        r = requests.post(
+            IOS_API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {IOS_API_TOKEN}",
+            },
+            json={"code": code, "chatId": str(user_id)},
+        )
+        if r.status_code != 200:
+            await update.message.reply_text("Не удалось создать ссылку через iOS API.")
+            return
+    except Exception:
+        await update.message.reply_text("Ошибка сети при создании ссылки.")
+        return
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/ios/create",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": str(user_id), "name": name, "code": code},
+        )
+        if r.status_code == 409:
+            await update.message.reply_text("Такое имя уже занято.")
+            return
+        if r.status_code != 200:
+            await update.message.reply_text("Ошибка сервера при сохранении ссылки.")
+            return
+    except Exception:
+        await update.message.reply_text("Ошибка сети.")
+        return
+    await update.message.reply_text(f"Готово. Ссылка: {IOS_LINK_BASE}/{name}")
+    try:
+        await context.bot.send_message(
+            chat_id=int(user_id),
+            text=(
+                f"Ваша ссылка: {IOS_LINK_BASE}/{name}\n"
+                f"Ваши отчеты тут: {IOS_REPORTS_BOT}"
+            ),
+        )
+    except Exception:
+        pass
+
+
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
@@ -690,6 +776,7 @@ def main():
     app.add_handler(CommandHandler("pending", pending))
     app.add_handler(CommandHandler("payment", payment))
     app.add_handler(CommandHandler("user", user_payments))
+    app.add_handler(CommandHandler("ios_bind", ios_bind))
     app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("reject", reject))
     app.add_handler(CallbackQueryHandler(handle_callback))

@@ -146,6 +146,10 @@ class IosCreateReq(BaseModel):
     code: str
 
 
+class IosCheckNameReq(BaseModel):
+    name: str
+
+
 def check_secret(given: Optional[str], expected: str, name: str):
     if not expected:
         raise HTTPException(status_code=500, detail=f"{name} not configured")
@@ -384,6 +388,20 @@ def ios_create(req: IosCreateReq, x_bot_secret: Optional[str] = Header(None)):
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="name_taken")
     return {"ok": True, "name": name, "code": req.code}
+
+
+@app.post("/ios/check_name")
+def ios_check_name(req: IosCheckNameReq, x_bot_secret: Optional[str] = Header(None)):
+    check_secret(x_bot_secret, BOT_SECRET, "BOT_SECRET")
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="invalid_name")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM ios_links WHERE name=?",
+            (name,),
+        ).fetchone()
+    return {"available": row is None}
 
 
 @app.post("/payment/get")

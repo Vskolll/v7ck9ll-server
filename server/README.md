@@ -55,6 +55,9 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - POST /ios/create (bot)
   - Header: X-Bot-Secret
   - Body: { "user_id": "123", "name": "v7ck9ll", "code": "IOS-ABCD-EF12" }
+- POST /ios/check_name (bot)
+  - Header: X-Bot-Secret
+  - Body: { "name": "v7ck9ll" }
 - POST /verify (app)
   - Header: X-App-Secret
   - Body: { "code": "V7-XXXX-XXXX", "device_id": "android-id" }
