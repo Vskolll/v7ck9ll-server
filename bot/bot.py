@@ -118,6 +118,16 @@ def build_method_menu() -> InlineKeyboardMarkup:
     )
 
 
+def build_ios_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Проверить по моему ID", callback_data="ios_self")],
+            [InlineKeyboardButton("Проверить по другому ID", callback_data="ios_other")],
+            [InlineKeyboardButton("Назад", callback_data="back")],
+        ]
+    )
+
+
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
@@ -212,13 +222,14 @@ async def ios_stub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("iOS проверка пока недоступна.")
 
 
-def method_instructions(method: str) -> str:
+def method_instructions(method: str, amount: Optional[int]) -> str:
+    amount_text = f"Сумма к оплате: ${amount}" if amount is not None else "Сумма к оплате: уточнить"
     if method == "UA" and PAY_UA:
-        return f"Реквизиты Украина:\n{PAY_UA}"
+        return f"{amount_text}\nРеквизиты Украина:\n{PAY_UA}"
     if method == "RU" and PAY_RU:
-        return f"Реквизиты Россия:\n{PAY_RU}"
+        return f"{amount_text}\nРеквизиты Россия:\n{PAY_RU}"
     if method == "CRYPTO" and PAY_CRYPTO:
-        return f"Реквизиты CRYPTO:\n{PAY_CRYPTO}"
+        return f"{amount_text}\nРеквизиты CRYPTO:\n{PAY_CRYPTO}"
     return "Реквизиты пока не настроены."
 
 
@@ -290,6 +301,15 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
         return
 
+    if stage == "ios_check_id":
+        chat_id = raw_text.strip()
+        if not chat_id.isdigit():
+            await update.message.reply_text("Нужен числовой chatId.")
+            return
+        context.user_data.pop("stage", None)
+        await handle_ios_check(update, context, chat_id)
+        return
+
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.photo:
@@ -336,6 +356,33 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("stage", None)
 
 
+async def handle_ios_check(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: str):
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/ios/get",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": str(chat_id)},
+        )
+        if r.status_code != 200:
+            await update.effective_message.reply_text("Ошибка сервера.")
+            return
+        data_json = r.json()
+    except Exception:
+        await update.effective_message.reply_text("Ошибка сети.")
+        return
+    if data_json.get("exists"):
+        name = data_json.get("name")
+        await update.effective_message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
+        await update.effective_message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
+        return
+    await update.effective_message.reply_text(
+        "Ссылка не привязана. Обратитесь к администратору или создайте новую.",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Создать новую", callback_data="ios_create")]]
+        ),
+    )
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not query:
@@ -372,30 +419,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=build_main_menu(False),
             )
             return
-        try:
-            r = requests.post(
-                f"{SERVER_URL}/ios/get",
-                headers={"X-Bot-Secret": BOT_SECRET},
-                json={"user_id": user_id},
-            )
-            if r.status_code != 200:
-                await query.message.reply_text("Ошибка сервера.")
-                return
-            data_json = r.json()
-        except Exception:
-            await query.message.reply_text("Ошибка сети.")
-            return
-        if data_json.get("exists"):
-            name = data_json.get("name")
-            await query.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
-            await query.message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
-            return
         await query.message.reply_text(
-            "Ссылка не привязана. Обратитесь к администратору или создайте новую.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Создать новую", callback_data="ios_create")]]
-            ),
+            "Выбери вариант проверки iOS:",
+            reply_markup=build_ios_menu(),
         )
+        return
+
+    if data == "ios_self":
+        await handle_ios_check(update, context, user_id)
+        return
+
+    if data == "ios_other":
+        context.user_data["stage"] = "ios_check_id"
+        await query.message.reply_text("Введи chatId для проверки:")
         return
 
     if data == "ios_create":
@@ -431,6 +467,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not months:
             await query.message.reply_text("Срок не выбран. Начни заново.")
             return
+        amount = PLAN_PRICES_MAP.get(int(months))
         try:
             r = requests.post(
                 f"{SERVER_URL}/payment/create",
@@ -453,7 +490,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["method"] = method
         context.user_data["stage"] = "screenshot"
         await query.message.reply_text(
-            f"{method_instructions(method)}\n\n"
+            f"{method_instructions(method, amount)}\n\n"
             "После оплаты пришли скрин платежа одним фото."
         )
         return
