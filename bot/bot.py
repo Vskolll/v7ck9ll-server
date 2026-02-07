@@ -30,6 +30,7 @@ IOS_API_URL = os.getenv("IOS_API_URL", "https://geo-photo-report.onrender.com/ap
 IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
 IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
+APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -123,6 +124,16 @@ def build_ios_menu() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("Проверить по моему ID", callback_data="ios_self")],
             [InlineKeyboardButton("Проверить по другому ID", callback_data="ios_other")],
+            [InlineKeyboardButton("Назад", callback_data="back")],
+        ]
+    )
+
+
+def build_android_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Получить код", callback_data="android_code")],
+            [InlineKeyboardButton("Получить приложение", callback_data="android_app")],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
     )
@@ -400,7 +411,29 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "android":
+        await query.message.reply_text(
+            "Выбери действие для Android:",
+            reply_markup=build_android_menu(),
+        )
+        return
+
+    if data == "android_code":
         await key(update, context)
+        return
+
+    if data == "android_app":
+        if not os.path.exists(APK_PATH):
+            await query.message.reply_text("APK не найден на сервере.")
+            return
+        try:
+            with open(APK_PATH, "rb") as f:
+                await context.bot.send_document(
+                    chat_id=update.effective_user.id,
+                    document=f,
+                    filename=os.path.basename(APK_PATH),
+                )
+        except Exception:
+            await query.message.reply_text("Не удалось отправить APK.")
         return
 
     if data == "ios":
