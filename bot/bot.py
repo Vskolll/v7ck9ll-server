@@ -5,7 +5,14 @@ from typing import Optional
 
 import requests
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    BotCommand,
+    MenuButtonCommands,
+    BotCommandScopeChat,
+)
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -149,15 +156,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
         return
-    try:
-        r = requests.post(
-            f"{SERVER_URL}/sub/status",
-            headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": str(update.effective_user.id)},
-        )
-        active = r.status_code == 200 and r.json().get("active")
-    except Exception:
-        active = False
+    active, _ = get_subscription_state(str(update.effective_user.id))
+    await sync_chat_commands(context, int(update.effective_user.id), active)
     await update.effective_message.reply_text(
         "Добро пожаловать! Выбери действие:",
         reply_markup=build_main_menu(active),
@@ -176,15 +176,40 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
         return
+    user_id = str(update.effective_user.id)
+    active, _ = get_subscription_state(user_id)
+    await sync_chat_commands(context, int(update.effective_user.id), active)
+    if not active:
+        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+        return
+
+    raw_mode = (context.args[0] if context.args else "").strip().lower()
+    if not raw_mode:
+        await update.effective_message.reply_text(
+            "Укажи платформу:\n"
+            "/key android — получить Android код\n"
+            "/key ios — получить iOS код доступа"
+        )
+        return
+    if raw_mode in ("ios", "apple", "айос", "иоs"):
+        await issue_ios_access_code(update, context)
+        return
+    if raw_mode in ("android", "droid", "андроид"):
+        pass
+    else:
+        await update.effective_message.reply_text(
+            "Используй:\n"
+            "/key android — получить Android код\n"
+            "/key ios — получить iOS код доступа"
+        )
+        return
+
     try:
         r = requests.post(
             f"{SERVER_URL}/issue",
             headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": str(update.effective_user.id)}
+            json={"user_id": user_id}
         )
-        if r.status_code == 403:
-            await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
-            return
         if r.status_code != 200:
             await update.effective_message.reply_text("Ошибка сервера при выдаче кода.")
             return
@@ -205,29 +230,53 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
         return
+    user_id = str(update.effective_user.id)
+    active, expires_at = get_subscription_state(user_id)
+    await sync_chat_commands(context, int(update.effective_user.id), active)
+    if not active:
+        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+        return
+    days_left = max(0, int((expires_at - int(time.time())) / 86400))
+    await update.effective_message.reply_text(
+        f"Подписка активна до {time.strftime('%Y-%m-%d', time.localtime(expires_at))} "
+        f"(осталось {days_left} дн.)."
+    )
+    if days_left <= 3:
+        await update.effective_message.reply_text("Подписка скоро закончится. Продли через /buy.")
+
+
+def get_subscription_state(user_id: str) -> tuple[bool, int]:
     try:
         r = requests.post(
             f"{SERVER_URL}/sub/status",
             headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": str(update.effective_user.id)}
+            json={"user_id": user_id}
         )
         if r.status_code != 200:
-            await update.effective_message.reply_text("Ошибка сервера при проверке подписки.")
-            return
+            return False, 0
         data = r.json()
         if not data.get("active"):
-            await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
-            return
+            return False, 0
         expires_at = int(data.get("expires_at", 0))
-        days_left = max(0, int((expires_at - int(time.time())) / 86400))
-        await update.effective_message.reply_text(
-            f"Подписка активна до {time.strftime('%Y-%m-%d', time.localtime(expires_at))} "
-            f"(осталось {days_left} дн.)."
-        )
-        if days_left <= 3:
-            await update.effective_message.reply_text("Подписка скоро закончится. Продли через /buy.")
+        return expires_at > int(time.time()), expires_at
     except Exception:
-        await update.effective_message.reply_text("Ошибка сети.")
+        return False, 0
+
+
+async def sync_chat_commands(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, active: bool
+) -> None:
+    commands = [
+        BotCommand("start", "Начать 🚀"),
+        BotCommand("status", "Проверить подписку"),
+        BotCommand("key", "Коды: /key android | /key ios"),
+    ]
+    if not active:
+        commands.append(BotCommand("buy", "Купить подписку"))
+    try:
+        await context.bot.set_my_commands(commands, scope=BotCommandScopeChat(chat_id))
+    except Exception:
+        pass
 
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -873,10 +922,20 @@ async def ios_bind(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
+async def setup_telegram_menu(application: Application) -> None:
+    commands = [
+        BotCommand("start", "Начать 🚀"),
+        BotCommand("status", "Проверить подписку"),
+        BotCommand("key", "Коды: /key android | /key ios"),
+    ]
+    await application.bot.set_my_commands(commands)
+    await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is missing")
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(setup_telegram_menu).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("key", key))
     app.add_handler(CommandHandler("buy", buy))
