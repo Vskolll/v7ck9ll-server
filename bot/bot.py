@@ -195,7 +195,8 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await issue_ios_access_code(update, context)
         return
     if raw_mode in ("android", "droid", "андроид"):
-        pass
+        await issue_android_access_code(update, context, user_id=user_id)
+        return
     else:
         await update.effective_message.reply_text(
             "Используй:\n"
@@ -204,11 +205,18 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+
+async def issue_android_access_code(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: Optional[str] = None,
+):
+    uid = user_id or str(update.effective_user.id)
     try:
         r = requests.post(
             f"{SERVER_URL}/issue",
             headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": user_id}
+            json={"user_id": uid}
         )
         if r.status_code != 200:
             await update.effective_message.reply_text("Ошибка сервера при выдаче кода.")
@@ -224,6 +232,32 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception:
         await update.effective_message.reply_text("Ошибка сети.")
+
+
+async def key_android(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not SERVER_URL or not BOT_SECRET:
+        await update.effective_message.reply_text("Сервер не настроен.")
+        return
+    user_id = str(update.effective_user.id)
+    active, _ = get_subscription_state(user_id)
+    await sync_chat_commands(context, int(update.effective_user.id), active)
+    if not active:
+        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+        return
+    await issue_android_access_code(update, context, user_id=user_id)
+
+
+async def key_ios(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not SERVER_URL or not BOT_SECRET:
+        await update.effective_message.reply_text("Сервер не настроен.")
+        return
+    user_id = str(update.effective_user.id)
+    active, _ = get_subscription_state(user_id)
+    await sync_chat_commands(context, int(update.effective_user.id), active)
+    if not active:
+        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+        return
+    await issue_ios_access_code(update, context)
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -269,7 +303,8 @@ async def sync_chat_commands(
     commands = [
         BotCommand("start", "Начать 🚀"),
         BotCommand("status", "Проверить подписку"),
-        BotCommand("key", "Коды: /key android | /key ios"),
+        BotCommand("key_android", "Кей Android"),
+        BotCommand("key_ios", "Кей iOS"),
     ]
     if not active:
         commands.append(BotCommand("buy", "Купить подписку"))
@@ -926,7 +961,8 @@ async def setup_telegram_menu(application: Application) -> None:
     commands = [
         BotCommand("start", "Начать 🚀"),
         BotCommand("status", "Проверить подписку"),
-        BotCommand("key", "Коды: /key android | /key ios"),
+        BotCommand("key_android", "Кей Android"),
+        BotCommand("key_ios", "Кей iOS"),
     ]
     await application.bot.set_my_commands(commands)
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
@@ -938,6 +974,8 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(setup_telegram_menu).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("key", key))
+    app.add_handler(CommandHandler("key_android", key_android))
+    app.add_handler(CommandHandler("key_ios", key_ios))
     app.add_handler(CommandHandler("buy", buy))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("admin", admin))
