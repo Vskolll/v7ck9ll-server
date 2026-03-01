@@ -300,7 +300,8 @@ def get_subscription_state(user_id: str) -> tuple[Optional[bool], int]:
         r = requests.post(
             f"{SERVER_URL}/sub/status",
             headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": user_id}
+            json={"user_id": user_id},
+            timeout=10,
         )
         if r.status_code != 200:
             return None, 0
@@ -386,6 +387,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{SERVER_URL}/sub/set_days",
                 headers={"X-Bot-Secret": BOT_SECRET},
                 json={"user_id": target_user, "days": days},
+                timeout=10,
             )
             if r.status_code != 200:
                 await update.message.reply_text("Ошибка сервера при обновлении дней.")
@@ -632,6 +634,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{SERVER_URL}/payment/list",
                     headers={"X-Bot-Secret": BOT_SECRET},
                     json={"status": "pending", "limit": 20},
+                    timeout=10,
                 )
                 if r.status_code != 200:
                     await query.message.reply_text("Ошибка сервера при получении платежей.")
@@ -689,20 +692,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not target_user:
                 await query.message.reply_text("Некорректный user_id.")
                 return
-            active, expires_at = get_subscription_state(target_user)
-            if active is True:
-                days_left = max(0, int((expires_at - int(time.time())) / 86400))
-                until = time.strftime("%Y-%m-%d %H:%M", time.localtime(expires_at))
-                txt = (
-                    f"👤 user_id: `{target_user}`\n"
-                    f"Статус: активна\n"
-                    f"Осталось: {days_left} дн.\n"
-                    f"До: {until}"
-                )
-            elif active is False:
-                txt = f"👤 user_id: `{target_user}`\nСтатус: неактивна."
-            else:
-                txt = f"👤 user_id: `{target_user}`\nСтатус: ошибка сети."
+            txt = (
+                f"👤 user_id: `{target_user}`\n"
+                "Выбери действие ниже:"
+            )
             await safe_edit_or_reply(
                 txt,
                 parse_mode="Markdown",
@@ -720,6 +713,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{SERVER_URL}/payment/by_user",
                     headers={"X-Bot-Secret": BOT_SECRET},
                     json={"user_id": target_user, "limit": 20},
+                    timeout=10,
                 )
                 if r.status_code != 200:
                     await query.message.reply_text("Ошибка сервера при получении платежей.")
@@ -769,6 +763,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{SERVER_URL}/sub/remove",
                     headers={"X-Bot-Secret": BOT_SECRET},
                     json={"user_id": target_user},
+                    timeout=10,
                 )
                 if r.status_code != 200:
                     await query.message.reply_text("Ошибка сервера при удалении подписки.")
