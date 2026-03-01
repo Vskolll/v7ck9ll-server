@@ -140,6 +140,11 @@ class SubRemoveReq(BaseModel):
     user_id: str
 
 
+class SubSetDaysReq(BaseModel):
+    user_id: str
+    days: int
+
+
 class IosGetReq(BaseModel):
     user_id: str
 
@@ -379,6 +384,31 @@ def sub_remove(req: SubRemoveReq, x_bot_secret: Optional[str] = Header(None)):
             (req.user_id,),
         )
     return {"ok": True, "removed": True, "old_expires_at": old_expires}
+
+
+@app.post("/sub/set_days")
+def sub_set_days(req: SubSetDaysReq, x_bot_secret: Optional[str] = Header(None)):
+    check_secret(x_bot_secret, BOT_SECRET, "BOT_SECRET")
+    days = int(req.days)
+    if days < 0 or days > 3650:
+        raise HTTPException(status_code=400, detail="invalid_days")
+
+    now = int(time.time())
+    with db() as conn:
+        if days == 0:
+            conn.execute(
+                "DELETE FROM subscriptions WHERE user_id=?",
+                (req.user_id,),
+            )
+            return {"ok": True, "user_id": req.user_id, "removed": True, "expires_at": None}
+
+        new_expires = now + days * 24 * 60 * 60
+        conn.execute(
+            "INSERT INTO subscriptions(user_id, expires_at) VALUES(?, ?)"
+            " ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at",
+            (req.user_id, new_expires),
+        )
+    return {"ok": True, "user_id": req.user_id, "removed": False, "expires_at": new_expires}
 
 
 @app.post("/ios/get")

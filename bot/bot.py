@@ -105,7 +105,7 @@ def build_plan_menu() -> InlineKeyboardMarkup:
         price_text = f"${price}" if price is not None else "цена?"
         row.append(
             InlineKeyboardButton(
-                f"{label} — {price_text}", callback_data=f"plan:{months}"
+                f"{label} - {price_text}", callback_data=f"plan:{months}"
             )
         )
         if len(row) == 2:
@@ -197,8 +197,8 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not raw_mode:
         await update.effective_message.reply_text(
             "Укажи платформу:\n"
-            "/key android — получить Android код\n"
-            "/key ios — получить iOS код доступа"
+            "/key android - получить Android код\n"
+            "/key ios - получить iOS код доступа"
         )
         return
     if raw_mode in ("ios", "apple", "айос", "иоs"):
@@ -210,8 +210,8 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.effective_message.reply_text(
             "Используй:\n"
-            "/key android — получить Android код\n"
-            "/key ios — получить iOS код доступа"
+            "/key android - получить Android код\n"
+            "/key ios - получить iOS код доступа"
         )
         return
 
@@ -362,6 +362,60 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = (update.message.text or "").strip()
     text = raw_text.upper()
     stage = context.user_data.get("stage")
+    if stage == "admin_sub_days":
+        if not is_admin(update.effective_user.id):
+            context.user_data.pop("stage", None)
+            context.user_data.pop("admin_target_user", None)
+            await update.message.reply_text("Недостаточно прав.")
+            return
+        target_user = str(context.user_data.get("admin_target_user") or "").strip()
+        if not target_user:
+            context.user_data.pop("stage", None)
+            await update.message.reply_text("Целевой user_id не найден. Открой /admin заново.")
+            return
+        try:
+            days = int(raw_text.strip())
+        except ValueError:
+            await update.message.reply_text("Введи целое число дней (например: 30).")
+            return
+        if days < 0 or days > 3650:
+            await update.message.reply_text("Допустимо от 0 до 3650 дней.")
+            return
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/sub/set_days",
+                headers={"X-Bot-Secret": BOT_SECRET},
+                json={"user_id": target_user, "days": days},
+            )
+            if r.status_code != 200:
+                await update.message.reply_text("Ошибка сервера при обновлении дней.")
+                return
+            data = r.json()
+        except Exception:
+            await update.message.reply_text("Ошибка сети.")
+            return
+
+        context.user_data.pop("stage", None)
+        context.user_data.pop("admin_target_user", None)
+
+        if data.get("removed"):
+            await update.message.reply_text(
+                f"✅ Подписка для `{target_user}` удалена (0 дней).",
+                parse_mode="Markdown",
+            )
+        else:
+            expires_at = int(data.get("expires_at") or 0)
+            days_left = max(0, int((expires_at - int(time.time())) / 86400))
+            until = time.strftime("%Y-%m-%d %H:%M", time.localtime(expires_at))
+            await update.message.reply_text(
+                f"✅ Обновлено для `{target_user}`\n"
+                f"⏳ Осталось: *{days_left} дн*\n"
+                f"📆 До: *{until}*",
+                parse_mode="Markdown",
+                reply_markup=build_admin_user_keyboard(target_user),
+            )
+        return
+
     if stage == "ios_name":
         name = raw_text.strip().lower()
         if not name or not all(c.isalnum() or c in ("-", "_") for c in name):
@@ -597,12 +651,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             page = min(page, total_pages - 1)
             start = page * page_size
             chunk = items[start:start + page_size]
-            lines = [f"📅 Подписки (стр. {page + 1}/{total_pages}):"]
-            for it in chunk:
+            lines = [f"📅 Подписки - стр. {page + 1}/{total_pages}", ""]
+            for i, it in enumerate(chunk, start=1 + start):
                 until = time.strftime("%Y-%m-%d", time.localtime(int(it["expires_at"])))
-                lines.append(f"• user_id: {it['user_id']} | {it['days_left']} дн | до {until}")
+                lines.append(
+                    f"{i}. 👤 `{it['user_id']}`\n"
+                    f"   ⏳ Осталось: *{it['days_left']} дн*\n"
+                    f"   📆 До: *{until}*"
+                )
             await query.message.edit_text(
                 "\n".join(lines),
+                parse_mode="Markdown",
                 reply_markup=build_admin_subs_keyboard(items, page, page_size=page_size),
             )
             return
@@ -668,6 +727,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        if data.startswith("admin_sub_edit:"):
+            target_user = data.split(":", 1)[1].strip()
+            if not target_user:
+                await query.message.reply_text("Некорректный user_id.")
+                return
+            context.user_data["stage"] = "admin_sub_days"
+            context.user_data["admin_target_user"] = target_user
+            await query.message.reply_text(
+                f"✏️ Введи новое количество дней для `{target_user}`.\n"
+                "0 - удалить подписку, 30 - месяц и т.д.",
+                parse_mode="Markdown",
+            )
+            return
+
         if data.startswith("admin_sub_remove:"):
             target_user = data.split(":", 1)[1].strip()
             if not target_user:
@@ -686,7 +759,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 await query.message.reply_text("Ошибка сети.")
                 return
-
             if result.get("removed"):
                 await query.message.edit_text(
                     f"✅ Подписка пользователя `{target_user}` удалена.",
@@ -929,6 +1001,7 @@ def build_admin_user_keyboard(user_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("🧾 Платежи пользователя", callback_data=f"admin_user_pay:{user_id}")],
+            [InlineKeyboardButton("✏️ Редактировать дни", callback_data=f"admin_sub_edit:{user_id}")],
             [InlineKeyboardButton("🗑️ Удалить подписку", callback_data=f"admin_sub_remove:{user_id}")],
             [InlineKeyboardButton("⬅️ К подпискам", callback_data="admin_subs:0")],
         ]
@@ -997,7 +1070,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = int(data.get("user_id"))
         await context.bot.send_message(
             chat_id=user_id,
-            text="Платеж отклонен. Если есть вопрос — напиши администратору.",
+            text="Платеж отклонен. Если есть вопрос - напиши администратору.",
         )
         await update.message.reply_text("Готово. Платеж отклонен.")
     except Exception:
@@ -1017,9 +1090,9 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def format_payment_line(p: dict) -> str:
     created = time.strftime("%Y-%m-%d", time.localtime(int(p.get("created_at", 0))))
     return (
-        f"id:{p.get('id')} user:{p.get('user_id')} "
-        f"plan:{p.get('plan_months')}m method:{p.get('method')} "
-        f"status:{p.get('status')} date:{created}"
+        f"🧾 #{p.get('id')} | 👤 {p.get('user_id')} | "
+        f"📦 {p.get('plan_months')}м | 💳 {p.get('method')} | "
+        f"📌 {p.get('status')} | 📅 {created}"
     )
 
 
