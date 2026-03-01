@@ -152,12 +152,22 @@ def build_android_menu() -> InlineKeyboardMarkup:
     )
 
 
+def build_admin_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📅 Подписки", callback_data="admin_subs:0")],
+            [InlineKeyboardButton("🧾 Ожидающие платежи", callback_data="admin_pending")],
+            [InlineKeyboardButton("🔄 Обновить", callback_data="admin_home")],
+        ]
+    )
+
+
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
         return
     active, _ = get_subscription_state(str(update.effective_user.id))
-    await sync_chat_commands(context, int(update.effective_user.id), active)
+    await sync_chat_commands(context, int(update.effective_user.id), active is True)
     await update.effective_message.reply_text(
         "Добро пожаловать! Выбери действие:",
         reply_markup=build_main_menu(active),
@@ -178,8 +188,8 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = str(update.effective_user.id)
     active, _ = get_subscription_state(user_id)
-    await sync_chat_commands(context, int(update.effective_user.id), active)
-    if not active:
+    await sync_chat_commands(context, int(update.effective_user.id), active is True)
+    if active is False:
         await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
         return
 
@@ -218,6 +228,9 @@ async def issue_android_access_code(
             headers={"X-Bot-Secret": BOT_SECRET},
             json={"user_id": uid}
         )
+        if r.status_code == 403:
+            await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+            return
         if r.status_code != 200:
             await update.effective_message.reply_text("Ошибка сервера при выдаче кода.")
             return
@@ -240,8 +253,8 @@ async def key_android(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = str(update.effective_user.id)
     active, _ = get_subscription_state(user_id)
-    await sync_chat_commands(context, int(update.effective_user.id), active)
-    if not active:
+    await sync_chat_commands(context, int(update.effective_user.id), active is True)
+    if active is False:
         await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
         return
     await issue_android_access_code(update, context, user_id=user_id)
@@ -253,8 +266,8 @@ async def key_ios(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = str(update.effective_user.id)
     active, _ = get_subscription_state(user_id)
-    await sync_chat_commands(context, int(update.effective_user.id), active)
-    if not active:
+    await sync_chat_commands(context, int(update.effective_user.id), active is True)
+    if active is False:
         await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
         return
     await issue_ios_access_code(update, context)
@@ -266,9 +279,12 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = str(update.effective_user.id)
     active, expires_at = get_subscription_state(user_id)
-    await sync_chat_commands(context, int(update.effective_user.id), active)
-    if not active:
+    await sync_chat_commands(context, int(update.effective_user.id), active is True)
+    if active is False:
         await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+        return
+    if active is None:
+        await update.effective_message.reply_text("Ошибка сети при проверке подписки.")
         return
     days_left = max(0, int((expires_at - int(time.time())) / 86400))
     await update.effective_message.reply_text(
@@ -279,7 +295,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Подписка скоро закончится. Продли через /buy.")
 
 
-def get_subscription_state(user_id: str) -> tuple[bool, int]:
+def get_subscription_state(user_id: str) -> tuple[Optional[bool], int]:
     try:
         r = requests.post(
             f"{SERVER_URL}/sub/status",
@@ -287,14 +303,14 @@ def get_subscription_state(user_id: str) -> tuple[bool, int]:
             json={"user_id": user_id}
         )
         if r.status_code != 200:
-            return False, 0
+            return None, 0
         data = r.json()
         if not data.get("active"):
             return False, 0
         expires_at = int(data.get("expires_at", 0))
         return expires_at > int(time.time()), expires_at
     except Exception:
-        return False, 0
+        return None, 0
 
 
 async def sync_chat_commands(
@@ -526,6 +542,132 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data or ""
     user_id = str(update.effective_user.id)
 
+    if data.startswith("admin_"):
+        if not is_admin(update.effective_user.id):
+            await query.message.reply_text("Недостаточно прав.")
+            return
+
+        if data == "admin_home":
+            await query.message.edit_text(
+                "⚙️ Админ-панель\nВыбери действие:",
+                reply_markup=build_admin_menu(),
+            )
+            return
+
+        if data == "admin_pending":
+            try:
+                r = requests.post(
+                    f"{SERVER_URL}/payment/list",
+                    headers={"X-Bot-Secret": BOT_SECRET},
+                    json={"status": "pending", "limit": 20},
+                )
+                if r.status_code != 200:
+                    await query.message.reply_text("Ошибка сервера при получении платежей.")
+                    return
+                items = r.json().get("items", [])
+            except Exception:
+                await query.message.reply_text("Ошибка сети.")
+                return
+            if not items:
+                await query.message.edit_text(
+                    "🧾 Ожидающих платежей нет.",
+                    reply_markup=build_admin_menu(),
+                )
+                return
+            lines = ["🧾 Ожидают подтверждения:"]
+            for p in items:
+                lines.append(format_payment_line(p))
+            await query.message.edit_text("\n".join(lines), reply_markup=build_admin_menu())
+            return
+
+        if data.startswith("admin_subs:"):
+            try:
+                page = max(0, int(data.split(":", 1)[1]))
+            except Exception:
+                page = 0
+            items = fetch_active_subscriptions()
+            if not items:
+                await query.message.edit_text(
+                    "📅 Активных подписок не найдено.",
+                    reply_markup=build_admin_menu(),
+                )
+                return
+            page_size = 8
+            total_pages = max(1, (len(items) + page_size - 1) // page_size)
+            page = min(page, total_pages - 1)
+            start = page * page_size
+            chunk = items[start:start + page_size]
+            lines = [f"📅 Подписки (стр. {page + 1}/{total_pages}):"]
+            for it in chunk:
+                until = time.strftime("%Y-%m-%d", time.localtime(int(it["expires_at"])))
+                lines.append(f"• user_id: {it['user_id']} | {it['days_left']} дн | до {until}")
+            await query.message.edit_text(
+                "\n".join(lines),
+                reply_markup=build_admin_subs_keyboard(items, page, page_size=page_size),
+            )
+            return
+
+        if data.startswith("admin_sub_user:"):
+            target_user = data.split(":", 1)[1].strip()
+            if not target_user:
+                await query.message.reply_text("Некорректный user_id.")
+                return
+            active, expires_at = get_subscription_state(target_user)
+            if active is True:
+                days_left = max(0, int((expires_at - int(time.time())) / 86400))
+                until = time.strftime("%Y-%m-%d %H:%M", time.localtime(expires_at))
+                txt = (
+                    f"👤 user_id: `{target_user}`\n"
+                    f"Статус: активна\n"
+                    f"Осталось: {days_left} дн.\n"
+                    f"До: {until}"
+                )
+            elif active is False:
+                txt = f"👤 user_id: `{target_user}`\nСтатус: неактивна."
+            else:
+                txt = f"👤 user_id: `{target_user}`\nСтатус: ошибка сети."
+            await query.message.edit_text(
+                txt,
+                parse_mode="Markdown",
+                reply_markup=build_admin_user_keyboard(target_user),
+            )
+            return
+
+        if data.startswith("admin_user_pay:"):
+            target_user = data.split(":", 1)[1].strip()
+            if not target_user:
+                await query.message.reply_text("Некорректный user_id.")
+                return
+            try:
+                r = requests.post(
+                    f"{SERVER_URL}/payment/by_user",
+                    headers={"X-Bot-Secret": BOT_SECRET},
+                    json={"user_id": target_user, "limit": 20},
+                )
+                if r.status_code != 200:
+                    await query.message.reply_text("Ошибка сервера при получении платежей.")
+                    return
+                items = r.json().get("items", [])
+            except Exception:
+                await query.message.reply_text("Ошибка сети.")
+                return
+            if not items:
+                await query.message.edit_text(
+                    f"🧾 Платежей у `{target_user}` не найдено.",
+                    parse_mode="Markdown",
+                    reply_markup=build_admin_user_keyboard(target_user),
+                )
+                return
+            lines = [f"🧾 Платежи `{target_user}`:"]
+            for p in items:
+                lines.append(format_payment_line(p))
+            await query.message.edit_text(
+                "\n".join(lines),
+                parse_mode="Markdown",
+                reply_markup=build_admin_user_keyboard(target_user),
+            )
+            return
+
     if data == "buy":
         await query.message.reply_text("Выбери срок подписки:", reply_markup=build_plan_menu())
         return
@@ -691,6 +833,74 @@ async def remind_expiring(context: ContextTypes.DEFAULT_TYPE, days: int, label: 
             continue
 
 
+def fetch_active_subscriptions(days_window: int = 3650) -> list[dict]:
+    now = int(time.time())
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/sub/expiring",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"days": days_window},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return []
+        items = r.json().get("items", [])
+    except Exception:
+        return []
+
+    out = []
+    for item in items:
+        user_id = str(item.get("user_id") or "").strip()
+        expires_at = int(item.get("expires_at") or 0)
+        if not user_id or expires_at <= now:
+            continue
+        days_left = max(0, int((expires_at - now) / 86400))
+        out.append(
+            {
+                "user_id": user_id,
+                "expires_at": expires_at,
+                "days_left": days_left,
+            }
+        )
+    out.sort(key=lambda x: x["expires_at"])
+    return out
+
+
+def build_admin_subs_keyboard(items: list[dict], page: int, page_size: int = 8) -> InlineKeyboardMarkup:
+    start = page * page_size
+    chunk = items[start:start + page_size]
+    rows = []
+    for it in chunk:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"👤 {it['user_id']} • {it['days_left']} дн",
+                    callback_data=f"admin_sub_user:{it['user_id']}",
+                )
+            ]
+        )
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"admin_subs:{page - 1}"))
+    if start + page_size < len(items):
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"admin_subs:{page + 1}"))
+    if nav:
+        rows.append(nav)
+
+    rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="admin_home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_admin_user_keyboard(user_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🧾 Платежи пользователя", callback_data=f"admin_user_pay:{user_id}")],
+            [InlineKeyboardButton("⬅️ К подпискам", callback_data="admin_subs:0")],
+        ]
+    )
+
+
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("Недостаточно прав.")
@@ -765,12 +975,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Недостаточно прав.")
         return
     await update.message.reply_text(
-        "Админ-команды:\n"
-        "/pending — последние ожидания\n"
-        "/payment <id> — детали платежа\n"
-        "/user <user_id> — платежи пользователя\n"
-        "/approve <id> — подтвердить\n"
-        "/reject <id> — отклонить"
+        "⚙️ Админ-панель\nВыбери действие:",
+        reply_markup=build_admin_menu(),
     )
 
 
