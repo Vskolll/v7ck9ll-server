@@ -668,6 +668,39 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        if data.startswith("admin_sub_remove:"):
+            target_user = data.split(":", 1)[1].strip()
+            if not target_user:
+                await query.message.reply_text("Некорректный user_id.")
+                return
+            try:
+                r = requests.post(
+                    f"{SERVER_URL}/sub/remove",
+                    headers={"X-Bot-Secret": BOT_SECRET},
+                    json={"user_id": target_user},
+                )
+                if r.status_code != 200:
+                    await query.message.reply_text("Ошибка сервера при удалении подписки.")
+                    return
+                result = r.json()
+            except Exception:
+                await query.message.reply_text("Ошибка сети.")
+                return
+
+            if result.get("removed"):
+                await query.message.edit_text(
+                    f"✅ Подписка пользователя `{target_user}` удалена.",
+                    parse_mode="Markdown",
+                    reply_markup=build_admin_user_keyboard(target_user),
+                )
+            else:
+                await query.message.edit_text(
+                    f"ℹ️ У пользователя `{target_user}` нет активной подписки.",
+                    parse_mode="Markdown",
+                    reply_markup=build_admin_user_keyboard(target_user),
+                )
+            return
+
     if data == "buy":
         await query.message.reply_text("Выбери срок подписки:", reply_markup=build_plan_menu())
         return
@@ -896,6 +929,7 @@ def build_admin_user_keyboard(user_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("🧾 Платежи пользователя", callback_data=f"admin_user_pay:{user_id}")],
+            [InlineKeyboardButton("🗑️ Удалить подписку", callback_data=f"admin_sub_remove:{user_id}")],
             [InlineKeyboardButton("⬅️ К подпискам", callback_data="admin_subs:0")],
         ]
     )

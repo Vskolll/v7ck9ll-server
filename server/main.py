@@ -136,6 +136,10 @@ class SubExpiringReq(BaseModel):
     days: int = 3
 
 
+class SubRemoveReq(BaseModel):
+    user_id: str
+
+
 class IosGetReq(BaseModel):
     user_id: str
 
@@ -357,6 +361,24 @@ def sub_expiring(req: SubExpiringReq, x_bot_secret: Optional[str] = Header(None)
             (until,),
         ).fetchall()
     return {"items": [{"user_id": r[0], "expires_at": r[1]} for r in rows]}
+
+
+@app.post("/sub/remove")
+def sub_remove(req: SubRemoveReq, x_bot_secret: Optional[str] = Header(None)):
+    check_secret(x_bot_secret, BOT_SECRET, "BOT_SECRET")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT expires_at FROM subscriptions WHERE user_id=?",
+            (req.user_id,),
+        ).fetchone()
+        if not row:
+            return {"ok": True, "removed": False}
+        old_expires = int(row[0] or 0)
+        conn.execute(
+            "DELETE FROM subscriptions WHERE user_id=?",
+            (req.user_id,),
+        )
+    return {"ok": True, "removed": True, "old_expires_at": old_expires}
 
 
 @app.post("/ios/get")
