@@ -28,6 +28,8 @@ PAY_CRYPTO = os.getenv("PAY_CRYPTO", "")
 
 IOS_API_URL = os.getenv("IOS_API_URL", "https://geo-photo-report.onrender.com/api/register-code")
 IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
+IOS_ACCESS_API_URL = os.getenv("IOS_ACCESS_API_URL", "https://geo-photo-report.onrender.com/api/register-temp-code")
+IOS_ACCESS_CODE_TTL = int(os.getenv("IOS_ACCESS_CODE_TTL", "600"))
 IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
@@ -123,6 +125,7 @@ def build_method_menu() -> InlineKeyboardMarkup:
 def build_ios_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
+            [InlineKeyboardButton("Получить код доступа (10 мин)", callback_data="ios_access_code")],
             [InlineKeyboardButton("Проверить по моему ID", callback_data="ios_self")],
             [InlineKeyboardButton("Проверить по другому ID", callback_data="ios_other")],
             [InlineKeyboardButton("Назад", callback_data="back")],
@@ -396,6 +399,44 @@ async def handle_ios_check(update: Update, context: ContextTypes.DEFAULT_TYPE, c
     )
 
 
+async def issue_ios_access_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not IOS_API_TOKEN:
+        await update.effective_message.reply_text("IOS_API_TOKEN не настроен.")
+        return
+    try:
+        r = requests.post(
+            IOS_ACCESS_API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {IOS_API_TOKEN}",
+            },
+            json={
+                "chatId": str(update.effective_user.id),
+                "ttlSeconds": IOS_ACCESS_CODE_TTL,
+            },
+            timeout=15,
+        )
+        if r.status_code != 200:
+            await update.effective_message.reply_text("Не удалось выдать iOS код. Попробуй позже.")
+            return
+        data = r.json()
+    except Exception:
+        await update.effective_message.reply_text("Ошибка сети при выдаче iOS кода.")
+        return
+
+    code = data.get("code")
+    if not code:
+        await update.effective_message.reply_text("Сервер вернул пустой код.")
+        return
+    await update.effective_message.reply_text(
+        "iOS код доступа:\n"
+        f"`{code}`\n\n"
+        "Открой сайт, введи код и нажми 'Активировать'.\n"
+        "Доступ для устройства выдается на 10 минут.",
+        parse_mode="Markdown",
+    )
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not query:
@@ -462,6 +503,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "ios_self":
         await handle_ios_check(update, context, user_id)
+        return
+
+    if data == "ios_access_code":
+        await issue_ios_access_code(update, context)
         return
 
     if data == "ios_other":
