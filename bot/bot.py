@@ -596,13 +596,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data or ""
     user_id = str(update.effective_user.id)
 
+    async def safe_edit_or_reply(
+        text: str,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
+        parse_mode: Optional[str] = None,
+    ):
+        try:
+            await query.message.edit_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+        except Exception:
+            await query.message.reply_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+
     if data.startswith("admin_"):
         if not is_admin(update.effective_user.id):
             await query.message.reply_text("Недостаточно прав.")
             return
 
         if data == "admin_home":
-            await query.message.edit_text(
+            await safe_edit_or_reply(
                 "⚙️ Админ-панель\nВыбери действие:",
                 reply_markup=build_admin_menu(),
             )
@@ -623,7 +641,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_text("Ошибка сети.")
                 return
             if not items:
-                await query.message.edit_text(
+                await safe_edit_or_reply(
                     "🧾 Ожидающих платежей нет.",
                     reply_markup=build_admin_menu(),
                 )
@@ -631,7 +649,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines = ["🧾 Ожидают подтверждения:"]
             for p in items:
                 lines.append(format_payment_line(p))
-            await query.message.edit_text("\n".join(lines), reply_markup=build_admin_menu())
+            await safe_edit_or_reply("\n".join(lines), reply_markup=build_admin_menu())
             return
 
         if data.startswith("admin_subs:"):
@@ -641,7 +659,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 page = 0
             items = fetch_active_subscriptions()
             if not items:
-                await query.message.edit_text(
+                await safe_edit_or_reply(
                     "📅 Активных подписок не найдено.",
                     reply_markup=build_admin_menu(),
                 )
@@ -659,7 +677,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"   ⏳ Осталось: *{it['days_left']} дн*\n"
                     f"   📆 До: *{until}*"
                 )
-            await query.message.edit_text(
+            await safe_edit_or_reply(
                 "\n".join(lines),
                 parse_mode="Markdown",
                 reply_markup=build_admin_subs_keyboard(items, page, page_size=page_size),
@@ -685,7 +703,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 txt = f"👤 user_id: `{target_user}`\nСтатус: неактивна."
             else:
                 txt = f"👤 user_id: `{target_user}`\nСтатус: ошибка сети."
-            await query.message.edit_text(
+            await safe_edit_or_reply(
                 txt,
                 parse_mode="Markdown",
                 reply_markup=build_admin_user_keyboard(target_user),
@@ -711,7 +729,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_text("Ошибка сети.")
                 return
             if not items:
-                await query.message.edit_text(
+                await safe_edit_or_reply(
                     f"🧾 Платежей у `{target_user}` не найдено.",
                     parse_mode="Markdown",
                     reply_markup=build_admin_user_keyboard(target_user),
@@ -720,7 +738,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines = [f"🧾 Платежи `{target_user}`:"]
             for p in items:
                 lines.append(format_payment_line(p))
-            await query.message.edit_text(
+            await safe_edit_or_reply(
                 "\n".join(lines),
                 parse_mode="Markdown",
                 reply_markup=build_admin_user_keyboard(target_user),
@@ -760,13 +778,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_text("Ошибка сети.")
                 return
             if result.get("removed"):
-                await query.message.edit_text(
+                await safe_edit_or_reply(
                     f"✅ Подписка пользователя `{target_user}` удалена.",
                     parse_mode="Markdown",
                     reply_markup=build_admin_user_keyboard(target_user),
                 )
             else:
-                await query.message.edit_text(
+                await safe_edit_or_reply(
                     f"ℹ️ У пользователя `{target_user}` нет активной подписки.",
                     parse_mode="Markdown",
                     reply_markup=build_admin_user_keyboard(target_user),
