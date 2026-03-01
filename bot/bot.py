@@ -34,6 +34,7 @@ IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
 ANDROID_INSTRUCTION_URL = os.getenv("ANDROID_INSTRUCTION_URL", "https://t.me/+43BHwfNm3XlmN2Zi")
+IOS_INSTRUCTION_URL = os.getenv("IOS_INSTRUCTION_URL", "https://t.me/c/2984114680/90")
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -75,15 +76,15 @@ PLAN_PRICES_MAP = parse_plan_prices(PLAN_PRICES)
 def build_main_menu(active: bool) -> InlineKeyboardMarkup:
     if not active:
         return InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Купить подписку", callback_data="buy")]]
+            [[InlineKeyboardButton("💎 Купить подписку", callback_data="buy")]]
         )
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Android проверка", callback_data="android"),
-                InlineKeyboardButton("iOS проверка", callback_data="ios"),
+                InlineKeyboardButton("✨ Android проверка", callback_data="android"),
+                InlineKeyboardButton("🍏 iOS проверка", callback_data="ios"),
             ],
-            [InlineKeyboardButton("Профиль", callback_data="profile")],
+            [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
         ]
     )
 
@@ -125,9 +126,9 @@ def build_method_menu() -> InlineKeyboardMarkup:
 def build_ios_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Получить код доступа (10 мин)", callback_data="ios_access_code")],
-            [InlineKeyboardButton("Проверить по моему ID", callback_data="ios_self")],
-            [InlineKeyboardButton("Проверить по другому ID", callback_data="ios_other")],
+            [InlineKeyboardButton("🔑 Получить код доступа (10 мин)", callback_data="ios_access_code")],
+            [InlineKeyboardButton("🔎 Проверить по моему ID", callback_data="ios_self")],
+            [InlineKeyboardButton("📘 Получить инструкцию", url=IOS_INSTRUCTION_URL)],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
     )
@@ -136,9 +137,9 @@ def build_ios_menu() -> InlineKeyboardMarkup:
 def build_android_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Получить код", callback_data="android_code")],
-            [InlineKeyboardButton("Получить приложение", callback_data="android_app")],
-            [InlineKeyboardButton("Инструкция", url=ANDROID_INSTRUCTION_URL)],
+            [InlineKeyboardButton("🔑 Получить код", callback_data="android_code")],
+            [InlineKeyboardButton("📦 Получить приложение", callback_data="android_app")],
+            [InlineKeyboardButton("📘 Инструкция", url=ANDROID_INSTRUCTION_URL)],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
     )
@@ -189,7 +190,13 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         data = r.json()
         code = data.get("code", "")
-        await update.effective_message.reply_text(f"Android код: {code}\nДействует 10 минут.")
+        await update.effective_message.reply_text(
+            "Android код доступа:\n"
+            f"`{code}`\n\n"
+            "Скопируй код и введи в приложении.\n"
+            "Код действует 10 минут.",
+            parse_mode="Markdown",
+        )
     except Exception:
         await update.effective_message.reply_text("Ошибка сети.")
 
@@ -316,16 +323,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
         await update.message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
         return
-
-    if stage == "ios_check_id":
-        chat_id = raw_text.strip()
-        if not chat_id.isdigit():
-            await update.message.reply_text("Нужен числовой chatId.")
-            return
-        context.user_data.pop("stage", None)
-        await handle_ios_check(update, context, chat_id)
-        return
-
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.photo:
@@ -507,11 +504,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "ios_access_code":
         await issue_ios_access_code(update, context)
-        return
-
-    if data == "ios_other":
-        context.user_data["stage"] = "ios_check_id"
-        await query.message.reply_text("Введи chatId для проверки:")
         return
 
     if data == "ios_create":
