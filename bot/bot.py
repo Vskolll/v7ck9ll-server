@@ -1095,9 +1095,119 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Недостаточно прав.")
         return
     await update.message.reply_text(
-        "⚙️ Админ-панель\nВыбери действие:",
+        "⚙️ Админ-панель\n"
+        "Надежные команды:\n"
+        "/subs - список активных подписок\n"
+        "/sub_set <user_id> <days> - установить дни подписки\n"
+        "/sub_del <user_id> - удалить подписку\n"
+        "/pending - ожидающие платежи\n"
+        "/payment <id> - детали платежа\n"
+        "/user <user_id> - платежи пользователя",
         reply_markup=build_admin_menu(),
     )
+
+
+async def subs_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Недостаточно прав.")
+        return
+    items = fetch_active_subscriptions()
+    if not items:
+        await update.message.reply_text("📅 Активных подписок не найдено.")
+        return
+    lines = ["📅 Активные подписки:", ""]
+    for i, it in enumerate(items[:50], start=1):
+        until = time.strftime("%Y-%m-%d", time.localtime(int(it["expires_at"])))
+        lines.append(
+            f"{i}. 👤 `{it['user_id']}`\n"
+            f"   ⏳ Осталось: *{it['days_left']} дн*\n"
+            f"   📆 До: *{until}*"
+        )
+    if len(items) > 50:
+        lines.append("")
+        lines.append(f"… и еще {len(items) - 50} пользователей")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def sub_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Недостаточно прав.")
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("Используй: /sub_set <user_id> <days>")
+        return
+    target_user = context.args[0].strip()
+    try:
+        days = int(context.args[1].strip())
+    except ValueError:
+        await update.message.reply_text("days должен быть целым числом (0..3650).")
+        return
+    if days < 0 or days > 3650:
+        await update.message.reply_text("days должен быть в диапазоне 0..3650.")
+        return
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/sub/set_days",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": target_user, "days": days},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            await update.message.reply_text("Ошибка сервера при обновлении подписки.")
+            return
+        data = r.json()
+    except Exception:
+        await update.message.reply_text("Ошибка сети.")
+        return
+    if data.get("removed"):
+        await update.message.reply_text(
+            f"✅ Подписка для `{target_user}` удалена (0 дней).",
+            parse_mode="Markdown",
+        )
+        return
+    expires_at = int(data.get("expires_at") or 0)
+    days_left = max(0, int((expires_at - int(time.time())) / 86400))
+    until = time.strftime("%Y-%m-%d %H:%M", time.localtime(expires_at))
+    await update.message.reply_text(
+        f"✅ Обновлено для `{target_user}`\n"
+        f"⏳ Осталось: *{days_left} дн*\n"
+        f"📆 До: *{until}*",
+        parse_mode="Markdown",
+    )
+
+
+async def sub_del(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Недостаточно прав.")
+        return
+    if not context.args:
+        await update.message.reply_text("Используй: /sub_del <user_id>")
+        return
+    target_user = context.args[0].strip()
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/sub/remove",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": target_user},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            await update.message.reply_text("Ошибка сервера при удалении подписки.")
+            return
+        data = r.json()
+    except Exception:
+        await update.message.reply_text("Ошибка сети.")
+        return
+    if data.get("removed"):
+        await update.message.reply_text(
+            f"✅ Подписка пользователя `{target_user}` удалена.",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text(
+            f"ℹ️ У пользователя `{target_user}` нет активной подписки.",
+            parse_mode="Markdown",
+        )
 
 
 def format_payment_line(p: dict) -> str:
@@ -1305,6 +1415,9 @@ def main():
     app.add_handler(CommandHandler("buy", buy))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("subs", subs_list))
+    app.add_handler(CommandHandler("sub_set", sub_set))
+    app.add_handler(CommandHandler("sub_del", sub_del))
     app.add_handler(CommandHandler("pending", pending))
     app.add_handler(CommandHandler("payment", payment))
     app.add_handler(CommandHandler("user", user_payments))
