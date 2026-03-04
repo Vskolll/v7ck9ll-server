@@ -33,11 +33,12 @@ PAY_UA = os.getenv("PAY_UA", "")
 PAY_RU = os.getenv("PAY_RU", "")
 PAY_CRYPTO = os.getenv("PAY_CRYPTO", "")
 
-IOS_API_URL = os.getenv("IOS_API_URL", "https://geo-photo-report.onrender.com/api/register-code")
-IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
-IOS_ACCESS_API_URL = os.getenv("IOS_ACCESS_API_URL", "https://geo-photo-report.onrender.com/api/register-temp-code")
-IOS_ACCESS_CODE_TTL = int(os.getenv("IOS_ACCESS_CODE_TTL", "600"))
 IOS_LINK_BASE = os.getenv("IOS_LINK_BASE", "https://cklick1link.com")
+IOS_API_BASE = os.getenv("IOS_API_BASE", IOS_LINK_BASE).rstrip("/")
+IOS_API_URL = os.getenv("IOS_API_URL", f"{IOS_API_BASE}/api/register-code")
+IOS_API_TOKEN = os.getenv("IOS_API_TOKEN", "")
+IOS_ACCESS_API_URL = os.getenv("IOS_ACCESS_API_URL", f"{IOS_API_BASE}/api/register-temp-code")
+IOS_ACCESS_CODE_TTL = int(os.getenv("IOS_ACCESS_CODE_TTL", "600"))
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
 ANDROID_INSTRUCTION_URL = os.getenv("ANDROID_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/3")
@@ -581,9 +582,20 @@ async def issue_ios_access_code(update: Update, context: ContextTypes.DEFAULT_TY
     if not code:
         await update.effective_message.reply_text("Сервер вернул пустой код.")
         return
+
+    expires_at = int(data.get("expiresAt") or 0)
+    ttl_seconds = int(data.get("ttlSeconds") or IOS_ACCESS_CODE_TTL)
+    if expires_at > 0:
+        exp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires_at / 1000))
+        exp_line = f"Истекает: {exp_str} (локальное время сервера), TTL: {ttl_seconds} сек."
+    else:
+        exp_line = f"TTL: {ttl_seconds} сек."
+
     await update.effective_message.reply_text(
         "iOS код доступа:\n"
         f"`{code}`\n\n"
+        f"{exp_line}\n"
+        f"Проверочный URL: {IOS_LINK_BASE}\n\n"
         "Открой сайт, введи код и нажми 'Активировать'.\n"
         "Доступ для устройства выдается на 10 минут.",
         parse_mode="Markdown",
