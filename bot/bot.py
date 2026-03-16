@@ -148,6 +148,15 @@ def build_buy_menu() -> InlineKeyboardMarkup:
     )
 
 
+def build_profile_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🔄 Продлить подписку", callback_data="buy")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="back")],
+        ]
+    )
+
+
 def build_method_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -237,10 +246,9 @@ def build_start_caption(active: Optional[bool]) -> str:
         "<b>PROVERKAVIP</b>\n\n"
         f"{premium_check_emoji()} Ваш доступ активен.\n\n"
         "Выберите, что хотите сделать сейчас:\n"
-        f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android проверка\n"
-        f"{custom_emoji(IOS_EMOJI_ID, '🍏')} iOS проверка\n"
-        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} Профиль (Срок подписки)\n\n"
-        "Меню уже готово ниже."
+        f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android Проверка\n"
+        f"{custom_emoji(IOS_EMOJI_ID, '🍏')} iOS Проверка\n"
+        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} Профиль (Срок подписки)"
     )
 
 
@@ -605,15 +613,21 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active, expires_at = get_subscription_state(user_id)
     await sync_chat_commands(context, int(update.effective_user.id), active is True)
     if active is False:
-        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
+        await update.effective_message.reply_text(
+            f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} <b>Подписка не активна.</b>",
+            parse_mode="HTML",
+            reply_markup=build_buy_menu(),
+        )
         return
     if active is None:
         await update.effective_message.reply_text("Ошибка сети при проверке подписки.")
         return
     days_left = max(0, int((expires_at - int(time.time())) / 86400))
+    until = time.strftime("%Y-%m-%d", time.localtime(expires_at))
     await update.effective_message.reply_text(
-        f"Подписка активна до {time.strftime('%Y-%m-%d', time.localtime(expires_at))} "
-        f"(осталось {days_left} дн.)."
+        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} <b>Ваша подписка активна до {html.escape(until)}</b>",
+        parse_mode="HTML",
+        reply_markup=build_profile_menu(),
     )
     if days_left <= 3:
         await update.effective_message.reply_text("Подписка скоро закончится. Продли через /buy.")
@@ -1182,7 +1196,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "android_code":
-        await key(update, context)
+        await issue_android_access_code(update, context, user_id=user_id)
         return
 
     if data == "android_app":
