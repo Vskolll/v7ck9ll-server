@@ -447,33 +447,31 @@ async def send_rental_ios_message(update: Update, context: ContextTypes.DEFAULT_
         return
     await update.effective_message.reply_text(
         f"{custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} <b>Чтобы пройти проверку, перейдите по данной ссылке:</b>\n"
-        f"{html.escape(ios_link)}\n\n"
+        f"{html.escape(ios_link)}\n"
+        "<b>(Зажать и открыть в Safari)</b>\n\n"
         "<b>Ваш код:</b>\n\n"
-        f"<code>{html.escape(code)}</code>\n\n"
-        f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
+        f"<code>{html.escape(code)}</code> {custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
         parse_mode="HTML",
     )
 
 
 def build_android_inline_message(code: str) -> str:
     return (
-        "Спасибо, что взяли аренду.\n\n"
-        "Чтобы пройти проверку, скачайте это приложение:\n"
+        f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} <b>Чтобы пройти проверку, скачайте это приложение:</b>\n"
         f"{html.escape(ANDROID_APP_LINK)}\n\n"
-        "Ваш код:\n\n"
+        "<b>Ваш код:</b>\n\n"
         f"<code>{html.escape(code)}</code>\n\n"
-        "Спасибо за выбор нашей аренды."
+        f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>"
     )
 
 
 def build_ios_inline_message(ios_link: str, code: str) -> str:
     return (
-        "Спасибо, что взяли аренду.\n\n"
-        "Чтобы пройти проверку, перейдите по данной ссылке:\n"
-        f"{html.escape(ios_link)}\n\n"
-        "Ваш код:\n\n"
-        f"<code>{html.escape(code)}</code>\n\n"
-        "Спасибо за выбор нашей аренды."
+        f"{custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} <b>Чтобы пройти проверку, перейдите по данной ссылке:</b>\n"
+        f"{html.escape(ios_link)}\n"
+        "<b>(Зажать и открыть в Safari)</b>\n\n"
+        "<b>Ваш код:</b>\n\n"
+        f"<code>{html.escape(code)}</code> {custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>"
     )
 
 
@@ -952,10 +950,10 @@ async def issue_ios_access_code(update: Update, context: ContextTypes.DEFAULT_TY
 
     await update.effective_message.reply_text(
         f"{custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} <b>Чтобы пройти проверку, перейдите по данной ссылке:</b>\n"
-        f"{html.escape(ios_link)}\n\n"
+        f"{html.escape(ios_link)}\n"
+        "<b>(Зажать и открыть в Safari)</b>\n\n"
         "<b>Ваш код:</b>\n\n"
-        f"<code>{html.escape(code)}</code>\n\n"
-        f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
+        f"<code>{html.escape(code)}</code> {custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
         parse_mode="HTML",
     )
 
