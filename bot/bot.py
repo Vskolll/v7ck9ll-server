@@ -47,6 +47,7 @@ APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7
 ANDROID_APP_LINK = os.getenv("ANDROID_APP_LINK", "https://t.me/ANDROIDAPPKK")
 ANDROID_INSTRUCTION_URL = os.getenv("ANDROID_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/3")
 IOS_INSTRUCTION_URL = os.getenv("IOS_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/2")
+INLINE_HTTP_TIMEOUT = float(os.getenv("INLINE_HTTP_TIMEOUT", "2.5"))
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -276,7 +277,7 @@ def fetch_android_access_code(user_id: str) -> tuple[Optional[str], Optional[str
             f"{SERVER_URL}/issue",
             headers={"X-Bot-Secret": BOT_SECRET},
             json={"user_id": user_id},
-            timeout=15,
+            timeout=INLINE_HTTP_TIMEOUT,
         )
         if r.status_code == 403:
             return None, "Подписка не активна. Используй /buy."
@@ -296,7 +297,7 @@ def fetch_ios_link_by_user_id(user_id: str) -> tuple[Optional[str], Optional[str
             f"{SERVER_URL}/ios/get",
             headers={"X-Bot-Secret": BOT_SECRET},
             json={"user_id": user_id},
-            timeout=15,
+            timeout=INLINE_HTTP_TIMEOUT,
         )
         if r.status_code != 200:
             return None, "Ошибка сервера."
@@ -326,7 +327,7 @@ def fetch_ios_access_code(user_id: str) -> tuple[Optional[str], Optional[str]]:
                 "chatId": user_id,
                 "ttlSeconds": IOS_ACCESS_CODE_TTL,
             },
-            timeout=15,
+            timeout=INLINE_HTTP_TIMEOUT,
         )
         if r.status_code != 200:
             return None, "Не удалось выдать iOS код. Попробуй позже."
@@ -435,13 +436,14 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    now_id = int(time.time())
     results = []
 
     android_code, android_error = fetch_android_access_code(user_id)
     if android_code and not android_error:
         results.append(
             InlineQueryResultArticle(
-                id=f"android:{user_id}:{int(time.time())}",
+                id=f"android:{user_id}:{now_id}",
                 title="Android",
                 description="Сообщение с Android-ссылкой и вашим кодом",
                 input_message_content=InputTextMessageContent(
@@ -453,11 +455,12 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         results.append(
             InlineQueryResultArticle(
-                id=f"android-error:{user_id}",
-                title="Android недоступен",
-                description=android_error or "Не удалось получить Android код.",
+                id=f"android-fallback:{user_id}:{now_id}",
+                title="Android",
+                description="Выбор доступен, код попробуйте обновить еще раз",
                 input_message_content=InputTextMessageContent(
-                    android_error or "Не удалось получить Android код."
+                    "Android временно недоступен.\n"
+                    "Попробуйте еще раз через пару секунд или откройте бота напрямую."
                 ),
             )
         )
@@ -467,7 +470,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ios_link and ios_code and not ios_link_error and not ios_code_error:
         results.append(
             InlineQueryResultArticle(
-                id=f"ios:{user_id}:{int(time.time())}",
+                id=f"ios:{user_id}:{now_id}",
                 title="iOS",
                 description="Сообщение с персональной iOS-ссылкой и вашим кодом",
                 input_message_content=InputTextMessageContent(
@@ -477,13 +480,15 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
     else:
-        ios_error = ios_link_error or ios_code_error or "Не удалось получить iOS данные."
         results.append(
             InlineQueryResultArticle(
-                id=f"ios-error:{user_id}",
-                title="iOS недоступен",
-                description=ios_error,
-                input_message_content=InputTextMessageContent(ios_error),
+                id=f"ios-fallback:{user_id}:{now_id}",
+                title="iOS",
+                description="Выбор доступен, данные попробуйте обновить еще раз",
+                input_message_content=InputTextMessageContent(
+                    "iOS временно недоступен.\n"
+                    "Попробуйте еще раз через пару секунд или откройте бота напрямую."
+                ),
             )
         )
 
@@ -544,7 +549,7 @@ def get_subscription_state(user_id: str) -> tuple[Optional[bool], int]:
             f"{SERVER_URL}/sub/status",
             headers={"X-Bot-Secret": BOT_SECRET},
             json={"user_id": user_id},
-            timeout=10,
+            timeout=INLINE_HTTP_TIMEOUT,
         )
         if r.status_code != 200:
             return None, 0
