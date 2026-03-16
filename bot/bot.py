@@ -1,6 +1,7 @@
 import os
 import time
 import secrets
+import html
 from typing import Optional
 
 import requests
@@ -177,13 +178,6 @@ def build_rental_platform_menu() -> InlineKeyboardMarkup:
             ]
         ]
     )
-
-
-def markdown_escape(value: str) -> str:
-    escaped = str(value or "")
-    for ch in ("\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"):
-        escaped = escaped.replace(ch, f"\\{ch}")
-    return escaped
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,9 +369,9 @@ def build_android_inline_message(code: str) -> str:
     return (
         "Спасибо, что взяли аренду.\n\n"
         "Чтобы пройти проверку, скачайте это приложение:\n"
-        f"{ANDROID_APP_LINK}\n\n"
+        f"{html.escape(ANDROID_APP_LINK)}\n\n"
         "Ваш код:\n\n"
-        f"`{markdown_escape(code)}`\n\n"
+        f"<code>{html.escape(code)}</code>\n\n"
         "Спасибо за выбор нашей аренды."
     )
 
@@ -386,9 +380,9 @@ def build_ios_inline_message(ios_link: str, code: str) -> str:
     return (
         "Спасибо, что взяли аренду.\n\n"
         "Чтобы пройти проверку, перейдите по данной ссылке:\n"
-        f"{ios_link}\n\n"
+        f"{html.escape(ios_link)}\n\n"
         "Ваш код:\n\n"
-        f"`{markdown_escape(code)}`\n\n"
+        f"<code>{html.escape(code)}</code>\n\n"
         "Спасибо за выбор нашей аренды."
     )
 
@@ -448,7 +442,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 description="Сообщение с Android-ссылкой и вашим кодом",
                 input_message_content=InputTextMessageContent(
                     build_android_inline_message(android_code),
-                    parse_mode="MarkdownV2",
+                    parse_mode="HTML",
                 ),
             )
         )
@@ -475,7 +469,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 description="Сообщение с персональной iOS-ссылкой и вашим кодом",
                 input_message_content=InputTextMessageContent(
                     build_ios_inline_message(ios_link, ios_code),
-                    parse_mode="MarkdownV2",
+                    parse_mode="HTML",
                 ),
             )
         )
