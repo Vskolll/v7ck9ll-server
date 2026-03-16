@@ -36,6 +36,14 @@ def init_db():
             )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_codes_user_id ON codes(user_id)")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(codes)").fetchall()}
+        if "redeemed_device_id" not in columns:
+            conn.execute("ALTER TABLE codes ADD COLUMN redeemed_device_id TEXT")
+        if "session_token" not in columns:
+            conn.execute("ALTER TABLE codes ADD COLUMN session_token TEXT")
+        if "session_expires_at" not in columns:
+            conn.execute("ALTER TABLE codes ADD COLUMN session_expires_at INTEGER")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS subscriptions (
@@ -172,6 +180,10 @@ def gen_code() -> str:
     return f"V7-{a}-{b}"
 
 
+def normalize_code(value: str) -> str:
+    return value.strip().upper()
+
+
 def get_active_subscription(conn: sqlite3.Connection, user_id: str) -> Optional[int]:
     now = int(time.time())
     row = conn.execute(
@@ -228,26 +240,77 @@ def issue(req: IssueReq, x_bot_secret: Optional[str] = Header(None)):
 def verify(req: VerifyReq, x_app_secret: Optional[str] = Header(None)):
     check_secret(x_app_secret, APP_SECRET, "APP_SECRET")
     now = int(time.time())
+    code_input = normalize_code(req.code)
+    device_id = req.device_id.strip()
+    if not code_input:
+        raise HTTPException(status_code=400, detail="invalid_code")
+    if not device_id:
+        raise HTTPException(status_code=400, detail="invalid_device")
+
     with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT code, expires_at, used FROM codes WHERE code=?",
-            (req.code,),
+            "SELECT code, user_id, expires_at, used, redeemed_device_id, session_token, session_expires_at "
+            "FROM codes WHERE code=?",
+            (code_input,),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=400, detail="invalid_code")
-        code, expires_at, used = row
-        if used:
-            raise HTTPException(status_code=400, detail="code_used")
+        code, user_id, expires_at, used, redeemed_device_id, session_token, session_expires_at = row
         if expires_at < now:
             raise HTTPException(status_code=400, detail="code_expired")
-        conn.execute("UPDATE codes SET used=1 WHERE code=?", (code,))
+        redeemed_device_id = (redeemed_device_id or "").strip()
+        session_token = (session_token or "").strip()
+        session_expires_at = int(session_expires_at or 0)
+
+        if used:
+            if (
+                redeemed_device_id == device_id
+                and session_token
+                and session_expires_at >= now
+            ):
+                return {
+                    "ok": True,
+                    "session_token": session_token,
+                    "expires_at": session_expires_at,
+                    "reused": True,
+                }
+            raise HTTPException(status_code=400, detail="code_used")
+
 
         token = secrets.token_urlsafe(32)
         session_expires = now + SESSION_TTL_SECONDS
         conn.execute(
             "INSERT INTO sessions(token, device_id, expires_at) VALUES(?, ?, ?)",
-            (token, req.device_id, session_expires),
+            (token, device_id, session_expires),
         )
+        updated = conn.execute(
+            "UPDATE codes "
+            "SET used=1, redeemed_device_id=?, session_token=?, session_expires_at=? "
+            "WHERE code=? AND used=0",
+            (device_id, token, session_expires, code),
+        )
+        if updated.rowcount != 1:
+            row = conn.execute(
+                "SELECT redeemed_device_id, session_token, session_expires_at, used "
+                "FROM codes WHERE code=?",
+                (code,),
+            ).fetchone()
+            if row:
+                existing_device_id, existing_token, existing_session_expires_at, existing_used = row
+                if (
+                    int(existing_used or 0) == 1
+                    and (existing_device_id or "").strip() == device_id
+                    and (existing_token or "").strip()
+                    and int(existing_session_expires_at or 0) >= now
+                ):
+                    return {
+                        "ok": True,
+                        "session_token": existing_token,
+                        "expires_at": int(existing_session_expires_at),
+                        "reused": True,
+                    }
+            raise HTTPException(status_code=400, detail="code_used")
     return {"ok": True, "session_token": token, "expires_at": session_expires}
 
 
