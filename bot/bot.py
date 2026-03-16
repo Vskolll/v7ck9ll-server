@@ -45,10 +45,24 @@ IOS_ACCESS_API_URL = os.getenv("IOS_ACCESS_API_URL", f"{IOS_API_BASE}/api/regist
 IOS_ACCESS_CODE_TTL = int(os.getenv("IOS_ACCESS_CODE_TTL", "600"))
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
+START_BANNER_PATH = os.getenv(
+    "START_BANNER_PATH",
+    os.path.join(os.path.dirname(__file__), "photo_2026-03-16_06-09-42.jpg"),
+)
 ANDROID_APP_LINK = os.getenv("ANDROID_APP_LINK", "https://t.me/ANDROIDAPPKK")
 ANDROID_INSTRUCTION_URL = os.getenv("ANDROID_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/3")
 IOS_INSTRUCTION_URL = os.getenv("IOS_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/2")
 INLINE_HTTP_TIMEOUT = float(os.getenv("INLINE_HTTP_TIMEOUT", "2.5"))
+PREMIUM_CHECK_EMOJI_ID = os.getenv("PREMIUM_CHECK_EMOJI_ID", "5211112665237175703")
+ANDROID_EMOJI_ID = os.getenv("ANDROID_EMOJI_ID", "5359758030198031389")
+IOS_EMOJI_ID = os.getenv("IOS_EMOJI_ID", "5334955749409834455")
+CODES_EMOJI_ID = os.getenv("CODES_EMOJI_ID", "5339139919434498721")
+INLINE_EMOJI_ID = os.getenv("INLINE_EMOJI_ID", "5210881166499921911")
+BUY_EMOJI_ID = os.getenv("BUY_EMOJI_ID", "5406745015365943482")
+PROFILE_EMOJI_ID = os.getenv("PROFILE_EMOJI_ID", "5316992572680320646")
+COPY_EMOJI_ID = os.getenv("COPY_EMOJI_ID", "5325856500416011197")
+LINK_EMOJI_ID = os.getenv("LINK_EMOJI_ID", "5271604874419647061")
+IOS_MENU_EMOJI_ID = os.getenv("IOS_MENU_EMOJI_ID", "5240463415176087010")
 
 PLAN_PRICES = os.getenv("PLAN_PRICES", "1:80,3:210,6:360,12:600")
 
@@ -90,7 +104,7 @@ PLAN_PRICES_MAP = parse_plan_prices(PLAN_PRICES)
 def build_main_menu(active: bool) -> InlineKeyboardMarkup:
     if not active:
         return InlineKeyboardMarkup(
-            [[InlineKeyboardButton("💎 Купить подписку", callback_data="buy")]]
+            [[InlineKeyboardButton("⬇️ Купить подписку", callback_data="buy")]]
         )
     return InlineKeyboardMarkup(
         [
@@ -112,7 +126,7 @@ def build_plan_menu() -> InlineKeyboardMarkup:
         price_text = f"${price}" if price is not None else "цена?"
         row.append(
             InlineKeyboardButton(
-                f"{label} - {price_text}", callback_data=f"plan:{months}"
+                f"{label} • {price_text}", callback_data=f"plan:{months}"
             )
         )
         if len(row) == 2:
@@ -122,6 +136,16 @@ def build_plan_menu() -> InlineKeyboardMarkup:
         buttons.append(row)
     buttons.append([InlineKeyboardButton("Назад", callback_data="back")])
     return InlineKeyboardMarkup(buttons)
+
+
+def build_buy_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🛒 Купить подписку", callback_data="buy_open_plan")],
+            [InlineKeyboardButton("🔄 Продлить подписку", callback_data="buy_open_plan")],
+            [InlineKeyboardButton("Назад", callback_data="back")],
+        ]
+    )
 
 
 def build_method_menu() -> InlineKeyboardMarkup:
@@ -140,8 +164,8 @@ def build_method_menu() -> InlineKeyboardMarkup:
 def build_ios_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔑 Получить код доступа (10 мин)", callback_data="ios_access_code")],
-            [InlineKeyboardButton("🔎 Проверить по моему ID", callback_data="ios_self")],
+            [InlineKeyboardButton("🔑 Получить код доступа", callback_data="ios_access_code")],
+            [InlineKeyboardButton("🔗 Получить | настроить ссылку", callback_data="ios_self")],
             [InlineKeyboardButton("📘 Получить инструкцию", url=IOS_INSTRUCTION_URL)],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
@@ -151,8 +175,8 @@ def build_ios_menu() -> InlineKeyboardMarkup:
 def build_android_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔑 Получить код", callback_data="android_code")],
-            [InlineKeyboardButton("📦 Получить приложение", callback_data="android_app")],
+            [InlineKeyboardButton("⚙️ Получить код", callback_data="android_code")],
+            [InlineKeyboardButton("📥 Получить приложение", callback_data="android_app")],
             [InlineKeyboardButton("📘 Инструкция", url=ANDROID_INSTRUCTION_URL)],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
@@ -180,14 +204,69 @@ def build_rental_platform_menu() -> InlineKeyboardMarkup:
     )
 
 
+def premium_check_emoji() -> str:
+    return f'<tg-emoji emoji-id="{PREMIUM_CHECK_EMOJI_ID}">✅</tg-emoji>'
+
+
+def custom_emoji(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+def build_start_caption(active: Optional[bool]) -> str:
+    if active is False:
+        return (
+            "<b>PROVERKAVIP</b>\n\n"
+            "<b>Проверка аренды в одном боте.</b>\n"
+            "<blockquote>Сервис создан для того чтоб облегчить Бизнес, а не тянуть его вниз</blockquote>\n"
+            "Доступно после активации подписки:\n"
+            f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android проверка\n"
+            f"{custom_emoji(IOS_EMOJI_ID, '🍏')} iOS проверка\n"
+            f"{custom_emoji(CODES_EMOJI_ID, '⚡')} Быстрая выдача кодов\n"
+            f"{custom_emoji(INLINE_EMOJI_ID, '✨')} Работа через inline-режим\n\n"
+            f"{custom_emoji(BUY_EMOJI_ID, '💎')} Нажмите кнопку ниже, чтобы купить подписку."
+        )
+
+    if active is None:
+        return (
+            "<b>PROVERKAVIP</b>\n\n"
+            "Сервис запущен, но статус подписки сейчас не удалось проверить.\n"
+            "Вы можете открыть профиль или повторить действие чуть позже."
+        )
+
+    return (
+        "<b>PROVERKAVIP</b>\n\n"
+        f"{premium_check_emoji()} Ваш доступ активен.\n\n"
+        "Выберите, что хотите сделать сейчас:\n"
+        f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android проверка\n"
+        f"{custom_emoji(IOS_EMOJI_ID, '🍏')} iOS проверка\n"
+        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} Профиль (Срок подписки)\n\n"
+        "Меню уже готово ниже."
+    )
+
+
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
         return
     active, _ = get_subscription_state(str(update.effective_user.id))
     await sync_chat_commands(context, int(update.effective_user.id), active is True)
+    caption = build_start_caption(active)
+    if os.path.exists(START_BANNER_PATH):
+        try:
+            with open(START_BANNER_PATH, "rb") as banner:
+                await update.effective_message.reply_photo(
+                    photo=banner,
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=build_main_menu(active),
+                )
+                return
+        except Exception:
+            pass
+
     await update.effective_message.reply_text(
-        "Добро пожаловать! Выбери действие:",
+        caption,
+        parse_mode="HTML",
         reply_markup=build_main_menu(active),
     )
 
@@ -255,11 +334,12 @@ async def issue_android_access_code(
         data = r.json()
         code = data.get("code", "")
         await update.effective_message.reply_text(
-            "Android код доступа:\n"
-            f"`{code}`\n\n"
-            "Скопируй код и введи в приложении.\n"
-            "Код действует 10 минут.",
-            parse_mode="Markdown",
+            f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} <b>Чтобы пройти проверку, скачайте это приложение:</b>\n"
+            f"{html.escape(ANDROID_APP_LINK)}\n\n"
+            "<b>Ваш код:</b>\n\n"
+            f"<code>{html.escape(code)}</code>\n\n"
+            f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
+            parse_mode="HTML",
         )
     except Exception:
         await update.effective_message.reply_text("Ошибка сети.")
@@ -339,11 +419,12 @@ async def send_rental_android_message(update: Update, context: ContextTypes.DEFA
         await update.effective_message.reply_text(error)
         return
     await update.effective_message.reply_text(
-        "Спасибо, что взяли аренду.\n\n"
-        "Чтобы пройти проверку,\n"
-        f"скачайте это приложение:\n{ANDROID_APP_LINK}\n\n"
-        f"Ваш код: {code}\n\n"
-        "Спасибо за выбор нашей аренды."
+        f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} <b>Чтобы пройти проверку, скачайте это приложение:</b>\n"
+        f"{html.escape(ANDROID_APP_LINK)}\n\n"
+        "<b>Ваш код:</b>\n\n"
+        f"<code>{html.escape(code)}</code>\n\n"
+        f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
+        parse_mode="HTML",
     )
 
 
@@ -357,11 +438,12 @@ async def send_rental_ios_message(update: Update, context: ContextTypes.DEFAULT_
         await update.effective_message.reply_text(code_error)
         return
     await update.effective_message.reply_text(
-        "Спасибо, что взяли аренду.\n\n"
-        "Чтобы пройти проверку,\n"
-        f"перейдите по данной ссылке:\n{ios_link}\n\n"
-        f"Ваш код: {code}\n\n"
-        "Спасибо за выбор нашей аренды."
+        f"{custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} <b>Чтобы пройти проверку, перейдите по данной ссылке:</b>\n"
+        f"{html.escape(ios_link)}\n\n"
+        "<b>Ваш код:</b>\n\n"
+        f"<code>{html.escape(code)}</code>\n\n"
+        f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
+        parse_mode="HTML",
     )
 
 
@@ -575,8 +657,9 @@ async def sync_chat_commands(
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Выбери срок подписки:",
-        reply_markup=build_plan_menu(),
+        f"{premium_check_emoji()} <b>Выберите действие:</b>",
+        parse_mode="HTML",
+        reply_markup=build_buy_menu(),
     )
 
 
@@ -802,11 +885,17 @@ async def handle_ios_check(update: Update, context: ContextTypes.DEFAULT_TYPE, c
         return
     if data_json.get("exists"):
         name = data_json.get("name")
-        await update.effective_message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
-        await update.effective_message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
+        await update.effective_message.reply_text(
+            f"{custom_emoji(LINK_EMOJI_ID, '🔗')} <b>Ваша ссылка:</b>\n"
+            f"{html.escape(f'{IOS_LINK_BASE}/{name}')}\n\n"
+            f"📰 <b>Ваши отчеты тут:</b> {html.escape(IOS_REPORTS_BOT)}\n"
+            "<b>Нажмите /start для начала работы</b>",
+            parse_mode="HTML",
+        )
         return
     await update.effective_message.reply_text(
-        "Ссылка не привязана. Обратитесь к администратору или создайте новую.",
+        f"{custom_emoji(BUY_EMOJI_ID, '💎')} <b>Ссылка не привязана. Создайте новую по кнопке ниже</b>",
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("Создать новую", callback_data="ios_create")]]
         ),
@@ -814,6 +903,10 @@ async def handle_ios_check(update: Update, context: ContextTypes.DEFAULT_TYPE, c
 
 
 async def issue_ios_access_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ios_link, link_error = fetch_ios_link_by_user_id(str(update.effective_user.id))
+    if link_error:
+        await update.effective_message.reply_text(link_error)
+        return
     if not IOS_API_TOKEN:
         await update.effective_message.reply_text("IOS_API_TOKEN не настроен.")
         return
@@ -843,22 +936,13 @@ async def issue_ios_access_code(update: Update, context: ContextTypes.DEFAULT_TY
         await update.effective_message.reply_text("Сервер вернул пустой код.")
         return
 
-    expires_at = int(data.get("expiresAt") or 0)
-    ttl_seconds = int(data.get("ttlSeconds") or IOS_ACCESS_CODE_TTL)
-    if expires_at > 0:
-        exp_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires_at / 1000))
-        exp_line = f"Истекает: {exp_str} (локальное время сервера), TTL: {ttl_seconds} сек."
-    else:
-        exp_line = f"TTL: {ttl_seconds} сек."
-
     await update.effective_message.reply_text(
-        "iOS код доступа:\n"
-        f"`{code}`\n\n"
-        f"{exp_line}\n"
-        f"Проверочный URL: {IOS_LINK_BASE}\n\n"
-        "Открой сайт, введи код и нажми 'Активировать'.\n"
-        "Доступ для устройства выдается на 10 минут.",
-        parse_mode="Markdown",
+        f"{custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} <b>Чтобы пройти проверку, перейдите по данной ссылке:</b>\n"
+        f"{html.escape(ios_link)}\n\n"
+        "<b>Ваш код:</b>\n\n"
+        f"<code>{html.escape(code)}</code>\n\n"
+        f"{custom_emoji(COPY_EMOJI_ID, '📋')} <b>Нажми чтоб скопировать</b>",
+        parse_mode="HTML",
     )
 
 
@@ -1059,7 +1143,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     if data == "buy":
-        await query.message.reply_text("Выбери срок подписки:", reply_markup=build_plan_menu())
+        await query.message.reply_text(
+            f"{premium_check_emoji()} <b>Выберите действие:</b>",
+            parse_mode="HTML",
+            reply_markup=build_buy_menu(),
+        )
+        return
+
+    if data == "buy_open_plan":
+        await query.message.reply_text(
+            f"{premium_check_emoji()} Выберите срок аренды:",
+            parse_mode="HTML",
+            reply_markup=build_plan_menu(),
+        )
         return
 
     if data == "back":
@@ -1068,7 +1164,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "android":
         await query.message.reply_text(
-            "Выбери действие для Android:",
+            f"<b>Выбери действие для {custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android:</b>",
+            parse_mode="HTML",
             reply_markup=build_android_menu(),
         )
         return
@@ -1120,7 +1217,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         await query.message.reply_text(
-            "Выбери вариант проверки iOS:",
+            f"<b>Выбери вариант проверки {custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} iOS:</b>",
+            parse_mode="HTML",
             reply_markup=build_ios_menu(),
         )
         return
@@ -1147,7 +1245,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "ios_create":
         context.user_data["stage"] = "ios_name"
         await query.message.reply_text(
-            "Введите имя ссылки (латиница/цифры, можно '-' и '_')."
+            f"{custom_emoji(CODES_EMOJI_ID, '⚡')} <b>Введите имя ссылки (на английском и цифрами)</b>",
+            parse_mode="HTML",
         )
         return
 
