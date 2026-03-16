@@ -9,6 +9,8 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
     BotCommand,
     MenuButtonCommands,
     BotCommandScopeChat,
@@ -18,6 +20,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
@@ -41,6 +44,7 @@ IOS_ACCESS_API_URL = os.getenv("IOS_ACCESS_API_URL", f"{IOS_API_BASE}/api/regist
 IOS_ACCESS_CODE_TTL = int(os.getenv("IOS_ACCESS_CODE_TTL", "600"))
 IOS_REPORTS_BOT = os.getenv("IOS_REPORTS_BOT", "@GO123456_bot")
 APK_PATH = os.getenv("APK_PATH", os.path.join(os.path.dirname(__file__), "app-V7ck9ll.apk"))
+ANDROID_APP_LINK = os.getenv("ANDROID_APP_LINK", "https://t.me/ANDROIDAPPKK")
 ANDROID_INSTRUCTION_URL = os.getenv("ANDROID_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/3")
 IOS_INSTRUCTION_URL = os.getenv("IOS_INSTRUCTION_URL", "https://t.me/V7ck9ll_Checker/2")
 
@@ -163,6 +167,24 @@ def build_admin_menu() -> InlineKeyboardMarkup:
     )
 
 
+def build_rental_platform_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Android", callback_data="rental_android"),
+                InlineKeyboardButton("iOS", callback_data="rental_ios"),
+            ]
+        ]
+    )
+
+
+def markdown_escape(value: str) -> str:
+    escaped = str(value or "")
+    for ch in ("\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"):
+        escaped = escaped.replace(ch, f"\\{ch}")
+    return escaped
+
+
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not SERVER_URL or not BOT_SECRET:
         await update.effective_message.reply_text("Сервер не настроен.")
@@ -246,6 +268,226 @@ async def issue_android_access_code(
         )
     except Exception:
         await update.effective_message.reply_text("Ошибка сети.")
+
+
+def fetch_android_access_code(user_id: str) -> tuple[Optional[str], Optional[str]]:
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/issue",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": user_id},
+            timeout=15,
+        )
+        if r.status_code == 403:
+            return None, "Подписка не активна. Используй /buy."
+        if r.status_code != 200:
+            return None, "Ошибка сервера при выдаче кода."
+        code = (r.json().get("code") or "").strip()
+        if not code:
+            return None, "Сервер вернул пустой код."
+        return code, None
+    except Exception:
+        return None, "Ошибка сети."
+
+
+def fetch_ios_link_by_user_id(user_id: str) -> tuple[Optional[str], Optional[str]]:
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/ios/get",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": user_id},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return None, "Ошибка сервера."
+        data = r.json()
+    except Exception:
+        return None, "Ошибка сети."
+
+    if not data.get("exists"):
+        return None, "iOS ссылка не привязана к вашему ID."
+    name = (data.get("name") or "").strip()
+    if not name:
+        return None, "iOS ссылка не найдена."
+    return f"{IOS_LINK_BASE}/{name}", None
+
+
+def fetch_ios_access_code(user_id: str) -> tuple[Optional[str], Optional[str]]:
+    if not IOS_API_TOKEN:
+        return None, "IOS_API_TOKEN не настроен."
+    try:
+        r = requests.post(
+            IOS_ACCESS_API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {IOS_API_TOKEN}",
+            },
+            json={
+                "chatId": user_id,
+                "ttlSeconds": IOS_ACCESS_CODE_TTL,
+            },
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return None, "Не удалось выдать iOS код. Попробуй позже."
+        code = (r.json().get("code") or "").strip()
+        if not code:
+            return None, "Сервер вернул пустой код."
+        return code, None
+    except Exception:
+        return None, "Ошибка сети при выдаче iOS кода."
+
+
+async def send_rental_android_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str):
+    code, error = fetch_android_access_code(user_id)
+    if error:
+        await update.effective_message.reply_text(error)
+        return
+    await update.effective_message.reply_text(
+        "Спасибо, что взяли аренду.\n\n"
+        "Чтобы пройти проверку,\n"
+        f"скачайте это приложение:\n{ANDROID_APP_LINK}\n\n"
+        f"Ваш код: {code}\n\n"
+        "Спасибо за выбор нашей аренды."
+    )
+
+
+async def send_rental_ios_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str):
+    ios_link, link_error = fetch_ios_link_by_user_id(user_id)
+    if link_error:
+        await update.effective_message.reply_text(link_error)
+        return
+    code, code_error = fetch_ios_access_code(user_id)
+    if code_error:
+        await update.effective_message.reply_text(code_error)
+        return
+    await update.effective_message.reply_text(
+        "Спасибо, что взяли аренду.\n\n"
+        "Чтобы пройти проверку,\n"
+        f"перейдите по данной ссылке:\n{ios_link}\n\n"
+        f"Ваш код: {code}\n\n"
+        "Спасибо за выбор нашей аренды."
+    )
+
+
+def build_android_inline_message(code: str) -> str:
+    return (
+        "Спасибо, что взяли аренду.\n\n"
+        "Чтобы пройти проверку, скачайте это приложение:\n"
+        f"{ANDROID_APP_LINK}\n\n"
+        "Ваш код:\n\n"
+        f"`{markdown_escape(code)}`\n\n"
+        "Спасибо за выбор нашей аренды."
+    )
+
+
+def build_ios_inline_message(ios_link: str, code: str) -> str:
+    return (
+        "Спасибо, что взяли аренду.\n\n"
+        "Чтобы пройти проверку, перейдите по данной ссылке:\n"
+        f"{ios_link}\n\n"
+        "Ваш код:\n\n"
+        f"`{markdown_escape(code)}`\n\n"
+        "Спасибо за выбор нашей аренды."
+    )
+
+
+async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.inline_query
+    if not query:
+        return
+
+    user = query.from_user
+    user_id = str(user.id)
+    active, _ = get_subscription_state(user_id)
+
+    if active is False:
+        await query.answer(
+            [
+                InlineQueryResultArticle(
+                    id=f"inactive:{user_id}",
+                    title="Подписка не активна",
+                    description="Перейдите в бот и оформите аренду.",
+                    input_message_content=InputTextMessageContent(
+                        "У вас нет активной подписки.\nПерейдите в бот и оформите аренду."
+                    ),
+                )
+            ],
+            cache_time=0,
+            is_personal=True,
+        )
+        return
+
+    if active is None:
+        await query.answer(
+            [
+                InlineQueryResultArticle(
+                    id=f"network:{user_id}",
+                    title="Ошибка проверки подписки",
+                    description="Попробуйте еще раз через пару секунд.",
+                    input_message_content=InputTextMessageContent(
+                        "Не удалось проверить подписку. Попробуйте еще раз через пару секунд."
+                    ),
+                )
+            ],
+            cache_time=0,
+            is_personal=True,
+        )
+        return
+
+    results = []
+
+    android_code, android_error = fetch_android_access_code(user_id)
+    if android_code and not android_error:
+        results.append(
+            InlineQueryResultArticle(
+                id=f"android:{user_id}:{int(time.time())}",
+                title="Android",
+                description="Сообщение с Android-ссылкой и вашим кодом",
+                input_message_content=InputTextMessageContent(
+                    build_android_inline_message(android_code),
+                    parse_mode="MarkdownV2",
+                ),
+            )
+        )
+    else:
+        results.append(
+            InlineQueryResultArticle(
+                id=f"android-error:{user_id}",
+                title="Android недоступен",
+                description=android_error or "Не удалось получить Android код.",
+                input_message_content=InputTextMessageContent(
+                    android_error or "Не удалось получить Android код."
+                ),
+            )
+        )
+
+    ios_link, ios_link_error = fetch_ios_link_by_user_id(user_id)
+    ios_code, ios_code_error = fetch_ios_access_code(user_id)
+    if ios_link and ios_code and not ios_link_error and not ios_code_error:
+        results.append(
+            InlineQueryResultArticle(
+                id=f"ios:{user_id}:{int(time.time())}",
+                title="iOS",
+                description="Сообщение с персональной iOS-ссылкой и вашим кодом",
+                input_message_content=InputTextMessageContent(
+                    build_ios_inline_message(ios_link, ios_code),
+                    parse_mode="MarkdownV2",
+                ),
+            )
+        )
+    else:
+        ios_error = ios_link_error or ios_code_error or "Не удалось получить iOS данные."
+        results.append(
+            InlineQueryResultArticle(
+                id=f"ios-error:{user_id}",
+                title="iOS недоступен",
+                description=ios_error,
+                input_message_content=InputTextMessageContent(ios_error),
+            )
+        )
+
+    await query.answer(results, cache_time=0, is_personal=True)
 
 
 async def key_android(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -479,6 +721,25 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("stage", None)
         await update.message.reply_text(f"Ваша ссылка: {IOS_LINK_BASE}/{name}")
         await update.message.reply_text(f"Ваши отчеты тут: {IOS_REPORTS_BOT}")
+        return
+
+    if raw_text == "@":
+        if not SERVER_URL or not BOT_SECRET:
+            await update.message.reply_text("Сервер не настроен.")
+            return
+        user_id = str(update.effective_user.id)
+        active, _ = get_subscription_state(user_id)
+        await sync_chat_commands(context, int(update.effective_user.id), active is True)
+        if active is False:
+            await update.message.reply_text("Подписка не активна. Используй /buy.")
+            return
+        if active is None:
+            await update.message.reply_text("Ошибка сети при проверке подписки.")
+            return
+        await update.message.reply_text(
+            "Выбери платформу:",
+            reply_markup=build_rental_platform_menu(),
+        )
         return
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -813,6 +1074,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "rental_android":
+        active, _ = get_subscription_state(user_id)
+        if active is False:
+            await query.message.reply_text("Подписка не активна. Используй /buy.")
+            return
+        if active is None:
+            await query.message.reply_text("Ошибка сети при проверке подписки.")
+            return
+        await send_rental_android_message(update, context, user_id)
+        return
+
     if data == "android_code":
         await key(update, context)
         return
@@ -852,6 +1124,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Выбери вариант проверки iOS:",
             reply_markup=build_ios_menu(),
         )
+        return
+
+    if data == "rental_ios":
+        active, _ = get_subscription_state(user_id)
+        if active is False:
+            await query.message.reply_text("Подписка не активна. Используй /buy.")
+            return
+        if active is None:
+            await query.message.reply_text("Ошибка сети при проверке подписки.")
+            return
+        await send_rental_ios_message(update, context, user_id)
         return
 
     if data == "ios_self":
@@ -994,6 +1277,62 @@ def fetch_active_subscriptions(days_window: int = 3650) -> list[dict]:
         )
     out.sort(key=lambda x: x["expires_at"])
     return out
+
+
+def parse_sub_set_lines(raw_text: str) -> tuple[list[tuple[str, int]], list[str]]:
+    items: list[tuple[str, int]] = []
+    errors: list[str] = []
+
+    for idx, line in enumerate(raw_text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "/sub_set":
+            parts = parts[1:]
+        if len(parts) != 2:
+            errors.append(f"Строка {idx}: нужен формат /sub_set <user_id> <days>")
+            continue
+
+        target_user = parts[0].strip()
+        try:
+            days = int(parts[1].strip())
+        except ValueError:
+            errors.append(f"Строка {idx}: days должен быть целым числом")
+            continue
+
+        if days < 0 or days > 3650:
+            errors.append(f"Строка {idx}: days должен быть в диапазоне 0..3650")
+            continue
+
+        items.append((target_user, days))
+
+    return items, errors
+
+
+def set_subscription_days(target_user: str, days: int) -> tuple[bool, str]:
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/sub/set_days",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"user_id": target_user, "days": days},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return False, f"{target_user}: ошибка сервера"
+        data = r.json()
+    except Exception:
+        return False, f"{target_user}: ошибка сети"
+
+    if data.get("removed"):
+        return True, f"{target_user}: подписка удалена"
+
+    expires_at = int(data.get("expires_at") or 0)
+    days_left = max(0, int((expires_at - int(time.time())) / 86400))
+    until = time.strftime("%Y-%m-%d %H:%M", time.localtime(expires_at))
+    return True, f"{target_user}: {days_left} дн., до {until}"
 
 
 def build_admin_subs_keyboard(items: list[dict], page: int, page_size: int = 8) -> InlineKeyboardMarkup:
@@ -1145,46 +1484,41 @@ async def sub_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("Недостаточно прав.")
         return
-    if len(context.args) < 2:
-        await update.message.reply_text("Используй: /sub_set <user_id> <days>")
+    raw_text = (update.message.text or "").strip()
+    items, parse_errors = parse_sub_set_lines(raw_text)
+    if not items and parse_errors:
+        await update.message.reply_text("\n".join(parse_errors[:20]))
         return
-    target_user = context.args[0].strip()
-    try:
-        days = int(context.args[1].strip())
-    except ValueError:
-        await update.message.reply_text("days должен быть целым числом (0..3650).")
-        return
-    if days < 0 or days > 3650:
-        await update.message.reply_text("days должен быть в диапазоне 0..3650.")
-        return
-    try:
-        r = requests.post(
-            f"{SERVER_URL}/sub/set_days",
-            headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": target_user, "days": days},
-            timeout=10,
-        )
-        if r.status_code != 200:
-            await update.message.reply_text("Ошибка сервера при обновлении подписки.")
-            return
-        data = r.json()
-    except Exception:
-        await update.message.reply_text("Ошибка сети.")
-        return
-    if data.get("removed"):
+    if not items:
         await update.message.reply_text(
-            f"✅ Подписка для `{target_user}` удалена (0 дней).",
-            parse_mode="Markdown",
+            "Используй: /sub_set <user_id> <days>\n"
+            "Или отправь несколько строк подряд с /sub_set."
         )
         return
-    expires_at = int(data.get("expires_at") or 0)
-    days_left = max(0, int((expires_at - int(time.time())) / 86400))
-    until = time.strftime("%Y-%m-%d %H:%M", time.localtime(expires_at))
+
+    results: list[str] = []
+    failed = 0
+
+    for target_user, days in items:
+        ok, message = set_subscription_days(target_user, days)
+        results.append(("✅ " if ok else "❌ ") + message)
+        if not ok:
+            failed += 1
+
+    if parse_errors:
+        results.extend([f"❌ {msg}" for msg in parse_errors])
+        failed += len(parse_errors)
+
+    if len(items) == 1 and not parse_errors and results:
+        await update.message.reply_text(results[0])
+        return
+
+    success = len(items) - (failed - len(parse_errors))
     await update.message.reply_text(
-        f"✅ Обновлено для `{target_user}`\n"
-        f"⏳ Осталось: *{days_left} дн*\n"
-        f"📆 До: *{until}*",
-        parse_mode="Markdown",
+        f"Обработано: {len(items)}\n"
+        f"Успешно: {success}\n"
+        f"С ошибками: {failed}\n\n"
+        + "\n".join(results[:80])
     )
 
 
@@ -1436,6 +1770,7 @@ def main():
     app.add_handler(CommandHandler("ios_bind", ios_bind))
     app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("reject", reject))
+    app.add_handler(InlineQueryHandler(inline_query))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
