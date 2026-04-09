@@ -102,10 +102,6 @@ PLAN_PRICES_MAP = parse_plan_prices(PLAN_PRICES)
 
 
 def build_main_menu(active: bool) -> InlineKeyboardMarkup:
-    if not active:
-        return InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬇️ Купить подписку", callback_data="buy")]]
-        )
     return InlineKeyboardMarkup(
         [
             [
@@ -141,8 +137,8 @@ def build_plan_menu() -> InlineKeyboardMarkup:
 def build_buy_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🛒 Купить подписку", callback_data="buy_open_plan")],
-            [InlineKeyboardButton("🔄 Продлить подписку", callback_data="buy_open_plan")],
+            [InlineKeyboardButton("✨ Android проверка", callback_data="android")],
+            [InlineKeyboardButton("🍏 iOS проверка", callback_data="ios")],
             [InlineKeyboardButton("Назад", callback_data="back")],
         ]
     )
@@ -151,7 +147,6 @@ def build_buy_menu() -> InlineKeyboardMarkup:
 def build_profile_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔄 Продлить подписку", callback_data="buy")],
             [InlineKeyboardButton("⬅️ Назад", callback_data="back")],
         ]
     )
@@ -165,7 +160,7 @@ def build_method_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Россия", callback_data="method:RU"),
             ],
             [InlineKeyboardButton("CRYPTO", callback_data="method:CRYPTO")],
-            [InlineKeyboardButton("Назад", callback_data="buy")],
+            [InlineKeyboardButton("Назад", callback_data="back")],
         ]
     )
 
@@ -225,30 +220,30 @@ def build_start_caption(active: Optional[bool]) -> str:
     if active is False:
         return (
             "<b>PROVERKAVIP</b>\n\n"
-            "<b>Проверка аренды в одном боте.</b>\n"
+            "<b>Проверка в одном боте.</b>\n"
             "<blockquote>Сервис создан для того чтоб облегчить Бизнес, а не тянуть его вниз</blockquote>\n"
-            "Доступно после активации подписки:\n"
+            "Сейчас сервис доступен всем пользователям:\n"
             f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android проверка\n"
             f"{custom_emoji(IOS_EMOJI_ID, '🍏')} iOS проверка\n"
             f"{custom_emoji(CODES_EMOJI_ID, '⚡')} Быстрая выдача кодов\n"
             f"{custom_emoji(INLINE_EMOJI_ID, '✨')} Работа через inline-режим\n\n"
-            f"{custom_emoji(BUY_EMOJI_ID, '💎')} Нажмите кнопку ниже, чтобы купить подписку."
+            f"{custom_emoji(BUY_EMOJI_ID, '💎')} Нажмите кнопку ниже, чтобы открыть меню сервиса."
         )
 
     if active is None:
         return (
             "<b>PROVERKAVIP</b>\n\n"
-            "Сервис запущен, но статус подписки сейчас не удалось проверить.\n"
-            "Вы можете открыть профиль или повторить действие чуть позже."
+            "Сервис запущен.\n"
+            "Вы можете открыть профиль или продолжить работу."
         )
 
     return (
         "<b>PROVERKAVIP</b>\n\n"
-        f"{premium_check_emoji()} Ваш доступ активен.\n\n"
+        f"{premium_check_emoji()} Доступ к сервису открыт.\n\n"
         "Выберите, что хотите сделать сейчас:\n"
         f"{custom_emoji(ANDROID_EMOJI_ID, '🤖')} Android Проверка\n"
         f"{custom_emoji(IOS_EMOJI_ID, '🍏')} iOS Проверка\n"
-        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} Профиль (Срок подписки)"
+        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} Профиль"
     )
 
 
@@ -294,9 +289,6 @@ async def key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     active, _ = get_subscription_state(user_id)
     await sync_chat_commands(context, int(update.effective_user.id), active is True)
-    if active is False:
-        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
-        return
 
     raw_mode = (context.args[0] if context.args else "").strip().lower()
     if not raw_mode:
@@ -333,9 +325,6 @@ async def issue_android_access_code(
             headers={"X-Bot-Secret": BOT_SECRET},
             json={"user_id": uid}
         )
-        if r.status_code == 403:
-            await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
-            return
         if r.status_code != 200:
             await update.effective_message.reply_text("Ошибка сервера при выдаче кода.")
             return
@@ -361,8 +350,6 @@ def fetch_android_access_code(user_id: str) -> tuple[Optional[str], Optional[str
             json={"user_id": user_id},
             timeout=INLINE_HTTP_TIMEOUT,
         )
-        if r.status_code == 403:
-            return None, "Подписка не активна. Используй /buy."
         if r.status_code != 200:
             return None, "Ошибка сервера при выдаче кода."
         code = (r.json().get("code") or "").strip()
@@ -484,23 +471,6 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(user.id)
     active, _ = get_subscription_state(user_id)
 
-    if active is False:
-        await query.answer(
-            [
-                InlineQueryResultArticle(
-                    id=f"inactive:{user_id}",
-                    title="Подписка не активна",
-                    description="Перейдите в бот и оформите аренду.",
-                    input_message_content=InputTextMessageContent(
-                        "У вас нет активной подписки.\nПерейдите в бот и оформите аренду."
-                    ),
-                )
-            ],
-            cache_time=0,
-            is_personal=True,
-        )
-        return
-
     if active is None:
         await query.answer(
             [
@@ -584,9 +554,6 @@ async def key_android(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     active, _ = get_subscription_state(user_id)
     await sync_chat_commands(context, int(update.effective_user.id), active is True)
-    if active is False:
-        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
-        return
     await issue_android_access_code(update, context, user_id=user_id)
 
 
@@ -597,9 +564,6 @@ async def key_ios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     active, _ = get_subscription_state(user_id)
     await sync_chat_commands(context, int(update.effective_user.id), active is True)
-    if active is False:
-        await update.effective_message.reply_text("Подписка не активна. Используй /buy.")
-        return
     await issue_ios_access_code(update, context)
 
 
@@ -610,44 +574,19 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     active, expires_at = get_subscription_state(user_id)
     await sync_chat_commands(context, int(update.effective_user.id), active is True)
-    if active is False:
-        await update.effective_message.reply_text(
-            f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} <b>Подписка не активна.</b>",
-            parse_mode="HTML",
-            reply_markup=build_buy_menu(),
-        )
-        return
     if active is None:
         await update.effective_message.reply_text("Ошибка сети при проверке подписки.")
         return
-    days_left = max(0, int((expires_at - int(time.time())) / 86400))
-    until = time.strftime("%Y-%m-%d", time.localtime(expires_at))
     await update.effective_message.reply_text(
-        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} <b>Ваша подписка активна до {html.escape(until)}</b>",
+        f"{custom_emoji(PROFILE_EMOJI_ID, '👤')} <b>Доступ к сервису активен для всех пользователей.</b>",
         parse_mode="HTML",
         reply_markup=build_profile_menu(),
     )
-    if days_left <= 3:
-        await update.effective_message.reply_text("Подписка скоро закончится. Продли через /buy.")
 
 
 def get_subscription_state(user_id: str) -> tuple[Optional[bool], int]:
-    try:
-        r = requests.post(
-            f"{SERVER_URL}/sub/status",
-            headers={"X-Bot-Secret": BOT_SECRET},
-            json={"user_id": user_id},
-            timeout=INLINE_HTTP_TIMEOUT,
-        )
-        if r.status_code != 200:
-            return None, 0
-        data = r.json()
-        if not data.get("active"):
-            return False, 0
-        expires_at = int(data.get("expires_at", 0))
-        return expires_at > int(time.time()), expires_at
-    except Exception:
-        return None, 0
+    expires_at = int(time.time()) + (3650 * 24 * 60 * 60)
+    return True, expires_at
 
 
 async def sync_chat_commands(
@@ -655,12 +594,10 @@ async def sync_chat_commands(
 ) -> None:
     commands = [
         BotCommand("start", "Начать 🚀"),
-        BotCommand("status", "Проверить подписку"),
+        BotCommand("status", "Проверить доступ"),
         BotCommand("key_android", "Кей Android"),
         BotCommand("key_ios", "Кей iOS"),
     ]
-    if not active:
-        commands.append(BotCommand("buy", "Купить подписку"))
     try:
         await context.bot.set_my_commands(commands, scope=BotCommandScopeChat(chat_id))
     except Exception:
@@ -669,7 +606,7 @@ async def sync_chat_commands(
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"{premium_check_emoji()} <b>Выберите действие:</b>",
+        f"{premium_check_emoji()} <b>Сервис сейчас бесплатный для всех. Выберите платформу:</b>",
         parse_mode="HTML",
         reply_markup=build_buy_menu(),
     )
@@ -824,12 +761,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
         active, _ = get_subscription_state(user_id)
         await sync_chat_commands(context, int(update.effective_user.id), active is True)
-        if active is False:
-            await update.message.reply_text("Подписка не активна. Используй /buy.")
-            return
-        if active is None:
-            await update.message.reply_text("Ошибка сети при проверке подписки.")
-            return
         await update.message.reply_text(
             "Выбери платформу:",
             reply_markup=build_rental_platform_menu(),
@@ -846,7 +777,7 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     method = context.user_data.get("method")
     months = context.user_data.get("plan_months")
     if not payment_id:
-        await update.message.reply_text("Платеж не найден. Начни заново /buy.")
+        await update.message.reply_text("Платеж не найден. Открой главное меню и начни заново.")
         context.user_data.pop("stage", None)
         return
     file_id = update.message.photo[-1].file_id
@@ -1156,7 +1087,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "buy":
         await query.message.reply_text(
-            f"{premium_check_emoji()} <b>Выберите действие:</b>",
+            f"{premium_check_emoji()} <b>Сервис сейчас бесплатный для всех. Выберите платформу:</b>",
             parse_mode="HTML",
             reply_markup=build_buy_menu(),
         )
@@ -1164,9 +1095,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "buy_open_plan":
         await query.message.reply_text(
-            f"{premium_check_emoji()} Выберите срок аренды:",
+            f"{premium_check_emoji()} Сервис сейчас бесплатный для всех.",
             parse_mode="HTML",
-            reply_markup=build_plan_menu(),
+            reply_markup=build_main_menu(True),
         )
         return
 
@@ -1183,13 +1114,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "rental_android":
-        active, _ = get_subscription_state(user_id)
-        if active is False:
-            await query.message.reply_text("Подписка не активна. Используй /buy.")
-            return
-        if active is None:
-            await query.message.reply_text("Ошибка сети при проверке подписки.")
-            return
         await send_rental_android_message(update, context, user_id)
         return
 
@@ -1213,21 +1137,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "ios":
-        try:
-            r = requests.post(
-                f"{SERVER_URL}/sub/status",
-                headers={"X-Bot-Secret": BOT_SECRET},
-                json={"user_id": user_id},
-            )
-            active = r.status_code == 200 and r.json().get("active")
-        except Exception:
-            active = False
-        if not active:
-            await query.message.reply_text(
-                "Подписка не активна. Нажми кнопку ниже, чтобы купить.",
-                reply_markup=build_main_menu(False),
-            )
-            return
         await query.message.reply_text(
             f"<b>Выбери вариант проверки {custom_emoji(IOS_MENU_EMOJI_ID, '🍏')} iOS:</b>",
             parse_mode="HTML",
@@ -1236,13 +1145,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "rental_ios":
-        active, _ = get_subscription_state(user_id)
-        if active is False:
-            await query.message.reply_text("Подписка не активна. Используй /buy.")
-            return
-        if active is None:
-            await query.message.reply_text("Ошибка сети при проверке подписки.")
-            return
         await send_rental_ios_message(update, context, user_id)
         return
 
@@ -1318,42 +1220,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def remind_expiring(context: ContextTypes.DEFAULT_TYPE, days: int, label: str):
-    if not SERVER_URL or not BOT_SECRET:
-        return
-    key_name = f"reminded_expiring_{days}"
-    reminded = context.application.bot_data.setdefault(key_name, set())
-    try:
-        r = requests.post(
-            f"{SERVER_URL}/sub/expiring",
-            headers={"X-Bot-Secret": BOT_SECRET},
-            json={"days": days},
-        )
-        if r.status_code != 200:
-            return
-        items = r.json().get("items", [])
-    except Exception:
-        return
-
-    for item in items:
-        user_id = item.get("user_id")
-        expires_at = int(item.get("expires_at", 0))
-        if not user_id or not expires_at:
-            continue
-        key = f"{user_id}:{expires_at}"
-        if key in reminded:
-            continue
-        try:
-            await context.bot.send_message(
-                chat_id=int(user_id),
-                text=(
-                    f"{label}\n"
-                    f"Дата окончания: {time.strftime('%Y-%m-%d', time.localtime(expires_at))}\n"
-                    "Продли подписку через /buy."
-                ),
-            )
-            reminded.add(key)
-        except Exception:
-            continue
+    return
 
 
 def fetch_active_subscriptions(days_window: int = 3650) -> list[dict]:

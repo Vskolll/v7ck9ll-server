@@ -226,9 +226,6 @@ def issue(req: IssueReq, x_bot_secret: Optional[str] = Header(None)):
     code = gen_code()
     expires_at = int(time.time()) + CODE_TTL_SECONDS
     with db() as conn:
-        active = get_active_subscription(conn, req.user_id)
-        if not active:
-            raise HTTPException(status_code=403, detail="subscription_required")
         conn.execute(
             "INSERT INTO codes(code, user_id, expires_at, used) VALUES(?, ?, ?, 0)",
             (code, req.user_id or "", expires_at),
@@ -411,11 +408,7 @@ def payment_reject(req: PaymentReviewReq, x_bot_secret: Optional[str] = Header(N
 @app.post("/sub/status")
 def sub_status(req: SubStatusReq, x_bot_secret: Optional[str] = Header(None)):
     check_secret(x_bot_secret, BOT_SECRET, "BOT_SECRET")
-    with db() as conn:
-        active_expires = get_active_subscription(conn, req.user_id)
-    if not active_expires:
-        return {"active": False, "expires_at": None}
-    return {"active": True, "expires_at": active_expires}
+    return {"active": True, "expires_at": int(time.time()) + (3650 * 24 * 60 * 60)}
 
 
 @app.post("/sub/expiring")

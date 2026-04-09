@@ -16,7 +16,10 @@ IOS_ACCESS_API_URL=https://cklick1link.com/api/register-temp-code
 IOS_API_TOKEN=...
 IOS_LINK_BASE=https://cklick1link.com
 IOS_REPORTS_BOT=@GO123456_bot
+EMERGENCY_ACCESS_FOR_ALL=false
 ```
+
+`EMERGENCY_ACCESS_FOR_ALL=true` временно считает всех пользователей активными в боте и открывает выдачу кодов без проверки подписки. Это аварийный режим, после восстановления базы подписок флаг нужно выключить.
 
 `IOS_ACCESS_API_URL` должен указывать на тот же backend, который обслуживает `IOS_LINK_BASE`, иначе временные iOS коды будут "не найдены" на этапе активации.
 

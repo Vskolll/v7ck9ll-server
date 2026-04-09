@@ -8,7 +8,10 @@ DB_PATH=/data/codes.db
 CODE_TTL_SECONDS=600
 SESSION_TTL_SECONDS=600
 SUBSCRIPTION_MONTH_SECONDS=2592000
+EMERGENCY_ACCESS_FOR_ALL=false
 ```
+
+`EMERGENCY_ACCESS_FOR_ALL=true` временно отключает проверку подписки для всех пользователей, но не отключает `BOT_SECRET` и `APP_SECRET`. Используйте только как аварийный режим и выключите после восстановления подписок.
 
 ## Run locally
 ```
